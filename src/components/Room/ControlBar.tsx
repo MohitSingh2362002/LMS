@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Mic, MicOff, Video, VideoOff, MonitorUp, MonitorOff,
-  MessageSquare, Users, Settings, LogOut, PhoneOff
+  MessageSquare, Users, Settings, LogOut, PhoneOff, PenTool
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useSession } from '../../context/SessionContext';
@@ -9,10 +9,12 @@ import { useSession } from '../../context/SessionContext';
 interface ControlBarProps {
   onToggleChat: () => void;
   onToggleParticipants: () => void;
+  onToggleWhiteboard: () => void;
   onOpenSettings: () => void;
   onLeave: () => void;
   isChatOpen: boolean;
   isParticipantsOpen: boolean;
+  isWhiteboardOpen: boolean;
 }
 
 interface ControlButtonProps {
@@ -56,10 +58,12 @@ function ControlButton({ icon, activeIcon, label, onClick, active, danger, badge
 export function ControlBar({
   onToggleChat,
   onToggleParticipants,
+  onToggleWhiteboard,
   onOpenSettings,
   onLeave,
   isChatOpen,
   isParticipantsOpen,
+  isWhiteboardOpen,
 }: ControlBarProps) {
   const { state, toggleMic, toggleCamera, toggleScreenShare } = useSession();
   const { isMicEnabled, isCameraEnabled, isScreenSharing, unreadCount } = state;
@@ -97,6 +101,12 @@ export function ControlBar({
           label={isScreenSharing ? 'Stop Share' : 'Share Screen'}
           onClick={toggleScreenShare}
           active={isScreenSharing}
+        />
+        <ControlButton
+          icon={<PenTool size={20} />}
+          label="Whiteboard"
+          onClick={onToggleWhiteboard}
+          active={isWhiteboardOpen}
         />
 
         <div className="w-px h-8 bg-white/10 mx-1" />

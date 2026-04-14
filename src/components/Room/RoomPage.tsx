@@ -12,6 +12,8 @@ import { ParticipantsPanel } from './ParticipantsPanel';
 import { SettingsModal } from './SettingsModal';
 import { ConnectionStatusBar } from './ConnectionStatusBar';
 import { EmptyState } from './EmptyState';
+import { WhiteboardPanel } from './WhiteboardPanel';
+import { ParticipantTile } from './ParticipantTile';
 import { Spinner } from '../shared/Spinner';
 import { Button } from '../shared/Button';
 
@@ -21,11 +23,12 @@ export function RoomPage() {
   const navigate = useNavigate();
   const { connect, disconnect } = useLiveKitRoom();
   const { state } = useSession();
-  const { total } = useParticipantGrid();
+  const { total, allParticipants } = useParticipantGrid();
 
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isParticipantsOpen, setIsParticipantsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(true);
   const connectedAtRef = useRef<Date | null>(null);
@@ -121,27 +124,56 @@ export function RoomPage() {
         {/* Participants panel */}
         <ParticipantsPanel open={isParticipantsOpen} onClose={() => setIsParticipantsOpen(false)} />
 
-        {/* Video area */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {total <= 1 ? (
-            <div className="flex-1 flex flex-col">
-              {state.localParticipant && (
-                <div className="flex-1 relative">
-                  <EmptyState roomName={decodedRoom} />
-                  {/* Small local preview */}
-                  <div className="absolute bottom-4 right-4 w-40 h-28 rounded-xl overflow-hidden shadow-lg border border-white/10">
-                    <VideoGrid />
+        {/* Video area — shown when whiteboard is NOT open */}
+        {!isWhiteboardOpen && (
+          <div className="flex-1 flex flex-col min-w-0">
+            {total <= 1 ? (
+              <div className="flex-1 flex flex-col">
+                {state.localParticipant && (
+                  <div className="flex-1 relative">
+                    <EmptyState roomName={decodedRoom} />
+                    <div className="absolute bottom-4 right-4 w-40 h-28 rounded-xl overflow-hidden shadow-lg border border-white/10">
+                      <VideoGrid />
+                    </div>
                   </div>
-                </div>
-              )}
-              {!state.localParticipant && (
-                <EmptyState roomName={decodedRoom} />
-              )}
-            </div>
-          ) : (
-            <VideoGrid />
-          )}
-        </div>
+                )}
+                {!state.localParticipant && (
+                  <EmptyState roomName={decodedRoom} />
+                )}
+              </div>
+            ) : (
+              <VideoGrid />
+            )}
+          </div>
+        )}
+
+        {/* Whiteboard — ALWAYS mounted so socket stays connected */}
+        <WhiteboardPanel
+          open={isWhiteboardOpen}
+          onClose={() => setIsWhiteboardOpen(false)}
+          onRequestOpen={() => setIsWhiteboardOpen(true)}
+          roomName={decodedRoom}
+          userName={displayName || 'User'}
+        />
+
+        {/* Video strip on right — stacked tiles when whiteboard is open */}
+        {isWhiteboardOpen && allParticipants.length > 0 && (
+          <div className="w-52 flex-shrink-0 flex flex-col gap-2 p-2 bg-surface-900/60 border-l border-white/8 overflow-y-auto scrollbar-thin">
+            {allParticipants.map((p) => (
+              <div
+                key={p.sid}
+                className="rounded-xl overflow-hidden border border-white/8 flex-shrink-0"
+                style={{ aspectRatio: '16/9' }}
+              >
+                <ParticipantTile
+                  participant={p}
+                  isLocal={p.sid === state.localParticipant?.sid}
+                  className="w-full h-full"
+                />
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Chat sidebar */}
         <ChatSidebar open={isChatOpen} onClose={() => setIsChatOpen(false)} />
@@ -151,10 +183,12 @@ export function RoomPage() {
       <ControlBar
         onToggleChat={() => setIsChatOpen((v) => !v)}
         onToggleParticipants={() => setIsParticipantsOpen((v) => !v)}
+        onToggleWhiteboard={() => setIsWhiteboardOpen((v) => !v)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onLeave={handleLeave}
         isChatOpen={isChatOpen}
         isParticipantsOpen={isParticipantsOpen}
+        isWhiteboardOpen={isWhiteboardOpen}
       />
 
       {/* Settings modal */}
