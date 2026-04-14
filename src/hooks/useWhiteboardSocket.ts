@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { WBShape } from '../types/whiteboard';
 
-const SOCKET_URL = import.meta.env.VITE_WB_SOCKET_URL || 'http://localhost:3001';
+const SOCKET_URL = "https://8104-43-230-104-87.ngrok-free.app";
 
 export const useWhiteboardSocket = (
   roomId: string,
