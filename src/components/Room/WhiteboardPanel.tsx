@@ -10,6 +10,7 @@ import clsx from 'clsx';
 import { useWhiteboardState } from '../../hooks/useWhiteboardState';
 import { useWhiteboardSocket } from '../../hooks/useWhiteboardSocket';
 import { useCanvasTransform } from '../../hooks/useCanvasTransform';
+import { useSession } from '../../context/SessionContext';
 import { WBShape, WBCollaboratorCursor } from '../../types/whiteboard';
 
 // ── Tools config (Zoom-style icons) ──────────────────
@@ -63,6 +64,7 @@ interface WhiteboardPanelProps {
 }
 
 export function WhiteboardPanel({ open, onClose, onRequestOpen, roomName, userName }: WhiteboardPanelProps) {
+  const { state } = useSession();
   const wb = useWhiteboardState();
   const [cursors, setCursors] = useState<WBCollaboratorCursor[]>([]);
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
@@ -102,6 +104,7 @@ export function WhiteboardPanel({ open, onClose, onRequestOpen, roomName, userNa
     wb.initShapes, wb.addShape, wb.updateShapeLocal, wb.deleteShapesLocal,
     handleCursorMoved, handleCursorLeft,
     handleWhiteboardOpened, handleWhiteboardClosed,
+    state.room,
   );
 
   // Emit open/close when panel visibility changes

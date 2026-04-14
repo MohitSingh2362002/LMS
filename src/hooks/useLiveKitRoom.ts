@@ -62,7 +62,10 @@ export function useLiveKitRoom() {
       .on(RoomEvent.DataReceived, (payload: Uint8Array, _participant?, _kind?) => {
         try {
           const text = new TextDecoder().decode(payload);
-          const msg: ChatMessage = JSON.parse(text);
+          const parsed = JSON.parse(text);
+          // Skip whiteboard data messages — handled by useWhiteboardSocket
+          if (parsed?.topic === 'wb') return;
+          const msg: ChatMessage = parsed;
           msg.timestamp = new Date(msg.timestamp);
           dispatch({ type: 'ADD_CHAT_MESSAGE', message: msg });
           dispatch({ type: 'INCREMENT_UNREAD' });

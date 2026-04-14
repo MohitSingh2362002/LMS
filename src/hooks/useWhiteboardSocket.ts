@@ -1,11 +1,40 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { Room, RoomEvent, DataPacket_Kind } from 'livekit-client';
 import { WBShape } from '../types/whiteboard';
 
-const SOCKET_URL = import.meta.env.VITE_WHITEBOARD_SOCKET_URL || "http://localhost:3001";
+/**
+ * Whiteboard sync via LiveKit DataChannel.
+ *
+ * Instead of a separate Socket.IO server, all whiteboard events are sent
+ * over LiveKit's reliable data channel.  Both participants are already
+ * connected to the same LiveKit room, so this works on Vercel (or any
+ * static host) without an extra backend.
+ *
+ * Message format:
+ *   { topic: 'wb', type: '<event-type>', payload: ... }
+ */
+
+interface WBMessage {
+  topic: 'wb';
+  type: string;
+  payload?: any;
+}
+
+const encode = (msg: WBMessage): Uint8Array =>
+  new TextEncoder().encode(JSON.stringify(msg));
+
+const decode = (data: Uint8Array): WBMessage | null => {
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(data));
+    if (parsed?.topic === 'wb') return parsed as WBMessage;
+    return null;
+  } catch {
+    return null;
+  }
+};
 
 export const useWhiteboardSocket = (
-  roomId: string,
+  _roomId: string,
   userName: string,
   onInitShapes: (shapes: WBShape[]) => void,
   onShapeAdded: (shape: WBShape) => void,
@@ -15,77 +44,153 @@ export const useWhiteboardSocket = (
   onCursorLeft: (socketId: string) => void,
   onWhiteboardOpened?: (data: { userName: string; socketId: string }) => void,
   onWhiteboardClosed?: (data: { userName: string; socketId: string }) => void,
+  room?: Room | null,
 ) => {
-  const socketRef = useRef<Socket | null>(null);
+  // Keep latest callbacks in refs so the listener never goes stale
+  const cbRef = useRef({
+    onInitShapes,
+    onShapeAdded,
+    onShapeUpdated,
+    onShapesDeleted,
+    onCursorMoved,
+    onCursorLeft,
+    onWhiteboardOpened,
+    onWhiteboardClosed,
+  });
 
   useEffect(() => {
-    if (!roomId || !userName) return;
+    cbRef.current = {
+      onInitShapes,
+      onShapeAdded,
+      onShapeUpdated,
+      onShapesDeleted,
+      onCursorMoved,
+      onCursorLeft,
+      onWhiteboardOpened,
+      onWhiteboardClosed,
+    };
+  });
 
-    const socket = io(SOCKET_URL);
-    socketRef.current = socket;
+  // Shapes state kept in-memory for new joiners  (simple; no persistence)
+  const shapesRef = useRef<WBShape[]>([]);
 
-    socket.on('connect', () => {
-      socket.emit('join-room', roomId, userName);
-    });
+  useEffect(() => {
+    if (!room) return;
 
-    socket.on('init-shapes', onInitShapes);
-    socket.on('shape-added', onShapeAdded);
-    socket.on('shape-updated', ({ id, updates }: { id: string; updates: Partial<WBShape> }) =>
-      onShapeUpdated(id, updates)
+    const handleData = (payload: Uint8Array) => {
+      const msg = decode(payload);
+      if (!msg) return;
+
+      switch (msg.type) {
+        case 'init-shapes':
+          shapesRef.current = msg.payload as WBShape[];
+          cbRef.current.onInitShapes(msg.payload);
+          break;
+        case 'shape-added':
+          shapesRef.current = [...shapesRef.current, msg.payload as WBShape];
+          cbRef.current.onShapeAdded(msg.payload);
+          break;
+        case 'shape-updated': {
+          const { id, updates } = msg.payload;
+          shapesRef.current = shapesRef.current.map(s => s.id === id ? { ...s, ...updates } : s);
+          cbRef.current.onShapeUpdated(id, updates);
+          break;
+        }
+        case 'shapes-deleted': {
+          const ids = msg.payload as string[];
+          shapesRef.current = shapesRef.current.filter(s => !ids.includes(s.id));
+          cbRef.current.onShapesDeleted(ids);
+          break;
+        }
+        case 'cursor-moved':
+          cbRef.current.onCursorMoved(msg.payload);
+          break;
+        case 'cursor-left':
+          cbRef.current.onCursorLeft(msg.payload);
+          break;
+        case 'whiteboard-opened':
+          cbRef.current.onWhiteboardOpened?.(msg.payload);
+          break;
+        case 'whiteboard-closed':
+          cbRef.current.onWhiteboardClosed?.(msg.payload);
+          break;
+        case 'request-shapes':
+          // A new participant is asking for current shapes — send them back
+          if (shapesRef.current.length > 0) {
+            room.localParticipant.publishData(
+              encode({ topic: 'wb', type: 'init-shapes', payload: shapesRef.current }),
+              { reliable: true }
+            );
+          }
+          break;
+      }
+    };
+
+    room.on(RoomEvent.DataReceived, handleData);
+
+    // When we join, ask the other participant(s) for existing shapes
+    room.localParticipant.publishData(
+      encode({ topic: 'wb', type: 'request-shapes' }),
+      { reliable: true }
     );
-    socket.on('shapes-deleted', onShapesDeleted);
-    socket.on('cursor-moved', onCursorMoved);
-    socket.on('cursor-left', onCursorLeft);
-
-    // Whiteboard visibility events
-    if (onWhiteboardOpened) {
-      socket.on('whiteboard-opened', onWhiteboardOpened);
-    }
-    if (onWhiteboardClosed) {
-      socket.on('whiteboard-closed', onWhiteboardClosed);
-    }
 
     return () => {
-      socket.disconnect();
+      room.off(RoomEvent.DataReceived, handleData);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, userName]);
+  }, [room]);
+
+  // ── Emitters ─────────────────────────────────────────
+
+  const publish = useCallback(
+    (type: string, payload?: any) => {
+      if (!room) return;
+      room.localParticipant.publishData(
+        encode({ topic: 'wb', type, payload }),
+        { reliable: type !== 'cursor-moved' }
+      );
+    },
+    [room]
+  );
 
   const emitAddShape = useCallback((shape: WBShape) => {
-    socketRef.current?.emit('add-shape', roomId, shape);
-  }, [roomId]);
+    shapesRef.current = [...shapesRef.current, shape];
+    publish('shape-added', shape);
+  }, [publish]);
 
   const emitUpdateShape = useCallback((id: string, updates: Partial<WBShape>) => {
-    socketRef.current?.emit('update-shape', roomId, id, updates);
-  }, [roomId]);
+    shapesRef.current = shapesRef.current.map(s => s.id === id ? { ...s, ...updates } : s);
+    publish('shape-updated', { id, updates });
+  }, [publish]);
 
   const emitDeleteShapes = useCallback((ids: string[]) => {
-    socketRef.current?.emit('delete-shapes', roomId, ids);
-  }, [roomId]);
+    shapesRef.current = shapesRef.current.filter(s => !ids.includes(s.id));
+    publish('shapes-deleted', ids);
+  }, [publish]);
 
   const emitUndo = useCallback(() => {
-    socketRef.current?.emit('undo', roomId);
-  }, [roomId]);
+    publish('undo');
+  }, [publish]);
 
   const emitRedo = useCallback(() => {
-    socketRef.current?.emit('redo', roomId);
-  }, [roomId]);
+    publish('redo');
+  }, [publish]);
 
   const emitClearCanvas = useCallback(() => {
-    socketRef.current?.emit('clear-canvas', roomId);
-  }, [roomId]);
+    shapesRef.current = [];
+    publish('init-shapes', []);
+  }, [publish]);
 
   const emitCursorMove = useCallback((x: number, y: number, name: string, color: string) => {
-    socketRef.current?.emit('cursor-move', roomId, { x, y, name, color });
-  }, [roomId]);
+    publish('cursor-moved', { socketId: room?.localParticipant?.sid ?? '', x, y, name, color });
+  }, [publish, room]);
 
   const emitOpenWhiteboard = useCallback(() => {
-    socketRef.current?.emit('open-whiteboard', roomId, userName);
-  }, [roomId, userName]);
+    publish('whiteboard-opened', { userName, socketId: room?.localParticipant?.sid ?? '' });
+  }, [publish, userName, room]);
 
   const emitCloseWhiteboard = useCallback(() => {
-    socketRef.current?.emit('close-whiteboard', roomId, userName);
-  }, [roomId, userName]);
+    publish('whiteboard-closed', { userName, socketId: room?.localParticipant?.sid ?? '' });
+  }, [publish, userName, room]);
 
   return {
     emitAddShape,
