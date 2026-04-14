@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: whiteboard-server
+    runtime: node
+    rootDir: whiteboard-app/server
+    buildCommand: npm install && npx tsc
+    startCommand: node dist/index.js
+    envVars:
+      - key: PORT
+        value: 3001
