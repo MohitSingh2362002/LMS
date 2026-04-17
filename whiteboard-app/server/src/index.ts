@@ -1,8 +1,10 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import cors from 'cors';
 
 const app = express();
+app.use(cors({ origin: '*' }));
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: '*' }
@@ -46,6 +48,14 @@ interface RoomState {
   hostSocketId: string | null;
   hostName: string;
   participants: Participant[];
+  activePoll: {
+    id: string;
+    question: string;
+    options: { id: string; text: string; votes: number }[];
+    isActive: boolean;
+    createdBy: string;
+    votesBySocket: Record<string, string>;
+  } | null;
 }
 
 // ── Room State (in-memory) ─────────────────────────────
@@ -60,6 +70,7 @@ const getRoom = (roomId: string): RoomState => {
       hostSocketId: null,
       hostName: '',
       participants: [],
+      activePoll: null,
     });
   }
   return rooms.get(roomId)!;
@@ -68,6 +79,13 @@ const getRoom = (roomId: string): RoomState => {
 // ── Health check endpoint ──────────────────────────────
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', rooms: rooms.size });
+});
+
+app.get('/rooms/:roomId/host-status', (req, res) => {
+  const roomId = req.params.roomId;
+  const room = rooms.get(roomId);
+  const hasHost = Boolean(room?.hostSocketId);
+  res.json({ roomId, hasHost });
 });
 
 // ── Socket.io Events ───────────────────────────────────
@@ -108,6 +126,16 @@ io.on('connection', (socket) => {
       hostName: room.hostName,
       participants: room.participants,
       isHost: room.hostSocketId === socket.id,
+      activePoll: room.activePoll
+        ? {
+            id: room.activePoll.id,
+            question: room.activePoll.question,
+            options: room.activePoll.options,
+            isActive: room.activePoll.isActive,
+            createdBy: room.activePoll.createdBy,
+          }
+        : null,
+      myPollVoteOptionId: room.activePoll?.votesBySocket[socket.id] || null,
     });
 
     // Notify everyone else
@@ -312,6 +340,75 @@ io.on('connection', (socket) => {
     console.log(`⏹ Host stopped recording in room: ${roomId}`);
   });
 
+  // ── FEATURE 4: POLL / Q&A ───────────────────────────────
+  socket.on('start-poll', (roomId: string, question: string, options: string[]) => {
+    const room = getRoom(roomId);
+    if (room.hostSocketId !== socket.id) return;
+
+    const cleanQuestion = (question || '').trim();
+    const cleanOptions = (options || []).map((opt) => opt.trim()).filter(Boolean).slice(0, 6);
+    if (!cleanQuestion || cleanOptions.length < 2) return;
+
+    const pollId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    room.activePoll = {
+      id: pollId,
+      question: cleanQuestion,
+      options: cleanOptions.map((text, idx) => ({ id: `opt-${idx + 1}`, text, votes: 0 })),
+      isActive: true,
+      createdBy: room.hostName || 'Host',
+      votesBySocket: {},
+    };
+
+    io.to(roomId).emit('poll-started', {
+      id: room.activePoll.id,
+      question: room.activePoll.question,
+      options: room.activePoll.options,
+      isActive: room.activePoll.isActive,
+      createdBy: room.activePoll.createdBy,
+    });
+  });
+
+  socket.on('vote-poll', (roomId: string, optionId: string) => {
+    const room = getRoom(roomId);
+    if (!room.activePoll || !room.activePoll.isActive) return;
+
+    const poll = room.activePoll;
+    const nextChoice = poll.options.find((opt) => opt.id === optionId);
+    if (!nextChoice) return;
+
+    const prevChoiceId = poll.votesBySocket[socket.id];
+    if (prevChoiceId === optionId) {
+      io.to(socket.id).emit('poll-vote-recorded', optionId);
+      return;
+    }
+
+    if (prevChoiceId) {
+      const prevOption = poll.options.find((opt) => opt.id === prevChoiceId);
+      if (prevOption && prevOption.votes > 0) {
+        prevOption.votes -= 1;
+      }
+    }
+
+    poll.votesBySocket[socket.id] = optionId;
+    nextChoice.votes += 1;
+
+    io.to(roomId).emit('poll-updated', {
+      id: poll.id,
+      question: poll.question,
+      options: poll.options,
+      isActive: poll.isActive,
+      createdBy: poll.createdBy,
+    });
+    io.to(socket.id).emit('poll-vote-recorded', optionId);
+  });
+
+  socket.on('end-poll', (roomId: string) => {
+    const room = getRoom(roomId);
+    if (room.hostSocketId !== socket.id) return;
+    room.activePoll = null;
+    io.to(roomId).emit('poll-ended');
+  });
+
   // ── DISCONNECT ──────────────────────────────────────────
 
   socket.on('disconnect', () => {
@@ -319,6 +416,24 @@ io.on('connection', (socket) => {
     if (!currentRoom) return;
 
     const room = getRoom(currentRoom);
+
+    if (room.activePoll) {
+      const votedOptionId = room.activePoll.votesBySocket[socket.id];
+      if (votedOptionId) {
+        const option = room.activePoll.options.find((opt) => opt.id === votedOptionId);
+        if (option && option.votes > 0) {
+          option.votes -= 1;
+        }
+        delete room.activePoll.votesBySocket[socket.id];
+        io.to(currentRoom).emit('poll-updated', {
+          id: room.activePoll.id,
+          question: room.activePoll.question,
+          options: room.activePoll.options,
+          isActive: room.activePoll.isActive,
+          createdBy: room.activePoll.createdBy,
+        });
+      }
+    }
 
     // Remove from participants
     room.participants = room.participants.filter(p => p.socketId !== socket.id);

@@ -16,6 +16,7 @@ import { ConnectionStatusBar } from './ConnectionStatusBar';
 import { EmptyState } from './EmptyState';
 import { WhiteboardPanel } from './WhiteboardPanel';
 import { ParticipantTile } from './ParticipantTile';
+import { PollPanel } from './PollPanel';
 import { Spinner } from '../shared/Spinner';
 import { Button } from '../shared/Button';
 
@@ -31,6 +32,7 @@ export function RoomPage() {
   const [isParticipantsOpen, setIsParticipantsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
+  const [isPollPanelOpen, setIsPollPanelOpen] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(true);
   const connectedAtRef = useRef<Date | null>(null);
@@ -106,6 +108,9 @@ export function RoomPage() {
     removeParticipant,
     notifyRecordingStarted,
     notifyRecordingStopped,
+    startPoll,
+    answerPoll,
+    endPoll,
   } = useHostControls({
     roomId: decodedRoom,
     userName: displayName || 'User',
@@ -271,6 +276,17 @@ export function RoomPage() {
           onRemoveParticipant={removeParticipant}
         />
 
+        <PollPanel
+          open={isPollPanelOpen}
+          onClose={() => setIsPollPanelOpen(false)}
+          isHost={state.isHost}
+          poll={state.activePoll}
+          myVoteOptionId={state.myPollVoteOptionId}
+          onStartPoll={startPoll}
+          onAnswerPoll={answerPoll}
+          onEndPoll={endPoll}
+        />
+
         {/* Video area — shown when whiteboard is NOT open */}
         {!isWhiteboardOpen && (
           <div className="flex-1 flex flex-col min-w-0">
@@ -340,12 +356,14 @@ export function RoomPage() {
         onToggleParticipants={() => setIsParticipantsOpen((v) => !v)}
         onToggleWhiteboard={handleToggleWhiteboard}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onTogglePolls={() => setIsPollPanelOpen((v) => !v)}
         onLeave={handleLeave}
         isChatOpen={isChatOpen}
         isParticipantsOpen={isParticipantsOpen}
         isWhiteboardOpen={isWhiteboardOpen}
         isHost={state.isHost}
         isRecording={isRecording}
+        isPollPanelOpen={isPollPanelOpen}
         onStartRecording={handleStartRecording}
         onStopRecording={handleStopRecording}
       />

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Mic, MicOff, Video, VideoOff, MonitorUp, MonitorOff,
-  MessageSquare, Users, Settings, LogOut, PhoneOff, PenTool, Circle, StopCircle
+  MessageSquare, Users, Settings, PhoneOff, PenTool, Circle, StopCircle, BarChart3
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useSession } from '../../context/SessionContext';
@@ -11,12 +11,14 @@ interface ControlBarProps {
   onToggleParticipants: () => void;
   onToggleWhiteboard: () => void;
   onOpenSettings: () => void;
+  onTogglePolls: () => void;
   onLeave: () => void;
   isChatOpen: boolean;
   isParticipantsOpen: boolean;
   isWhiteboardOpen: boolean;
   isHost: boolean;
   isRecording: boolean;
+  isPollPanelOpen: boolean;
   onStartRecording: () => void;
   onStopRecording: () => void;
 }
@@ -71,12 +73,14 @@ export function ControlBar({
   onToggleParticipants,
   onToggleWhiteboard,
   onOpenSettings,
+  onTogglePolls,
   onLeave,
   isChatOpen,
   isParticipantsOpen,
   isWhiteboardOpen,
   isHost,
   isRecording,
+  isPollPanelOpen,
   onStartRecording,
   onStopRecording,
 }: ControlBarProps) {
@@ -171,6 +175,12 @@ export function ControlBar({
           icon={<Settings size={20} />}
           label="Settings"
           onClick={onOpenSettings}
+        />
+        <ControlButton
+          icon={<BarChart3 size={20} />}
+          label="Polls"
+          onClick={onTogglePolls}
+          active={isPollPanelOpen}
         />
 
         <div className="w-px h-8 bg-white/10 mx-1" />

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
 import { ConnectionQuality, ConnectionState, LocalParticipant, RemoteParticipant, Room } from 'livekit-client';
-import { ChatMessage, ParticipantInfo, SessionState } from '../types';
+import { ChatMessage, ParticipantInfo, PollState, SessionState } from '../types';
 
 type SessionAction =
   | { type: 'SET_ROOM'; room: Room; localParticipant: LocalParticipant }
@@ -21,7 +21,9 @@ type SessionAction =
   | { type: 'SET_HOST_PARTICIPANTS'; participants: ParticipantInfo[] }
   | { type: 'UPDATE_HOST_PARTICIPANTS'; updater: (prev: ParticipantInfo[]) => ParticipantInfo[] }
   | { type: 'SET_WHITEBOARD_OPEN_BY_HOST'; open: boolean }
-  | { type: 'SET_IS_RECORDING'; recording: boolean };
+  | { type: 'SET_IS_RECORDING'; recording: boolean }
+  | { type: 'SET_ACTIVE_POLL'; poll: PollState | null }
+  | { type: 'SET_MY_POLL_VOTE'; optionId: string | null };
 
 const initialState: SessionState = {
   room: null,
@@ -42,6 +44,8 @@ const initialState: SessionState = {
   hostParticipants: [],
   isWhiteboardOpenByHost: false,
   isRecording: false,
+  activePoll: null,
+  myPollVoteOptionId: null,
 };
 
 function sessionReducer(state: SessionState, action: SessionAction): SessionState {
@@ -83,6 +87,10 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       return { ...state, isWhiteboardOpenByHost: action.open };
     case 'SET_IS_RECORDING':
       return { ...state, isRecording: action.recording };
+    case 'SET_ACTIVE_POLL':
+      return { ...state, activePoll: action.poll };
+    case 'SET_MY_POLL_VOTE':
+      return { ...state, myPollVoteOptionId: action.optionId };
     default:
       return state;
   }

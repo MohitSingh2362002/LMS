@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { ParticipantInfo } from '../types';
+import { ParticipantInfo, PollState } from '../types';
 
 const SOCKET_URL = import.meta.env.VITE_WHITEBOARD_SOCKET_URL || 'http://localhost:3001';
 
@@ -69,11 +69,15 @@ export function useHostControls({
       hostName: string;
       participants: ParticipantInfo[];
       isHost: boolean;
+      activePoll: PollState | null;
+      myPollVoteOptionId: string | null;
     }) => {
       console.log('[HostControls] Init state from server:', data);
       dispatch({ type: 'SET_IS_HOST', isHost: data.isHost });
       dispatch({ type: 'SET_HOST_INFO', hostSocketId: data.hostSocketId, hostName: data.hostName });
       dispatch({ type: 'SET_HOST_PARTICIPANTS', participants: data.participants });
+      dispatch({ type: 'SET_ACTIVE_POLL', poll: data.activePoll });
+      dispatch({ type: 'SET_MY_POLL_VOTE', optionId: data.myPollVoteOptionId });
     });
 
     // Host assigned
@@ -171,6 +175,24 @@ export function useHostControls({
       dispatch({ type: 'SET_IS_RECORDING', recording: false });
     });
 
+    socket.on('poll-started', (poll: PollState) => {
+      dispatch({ type: 'SET_ACTIVE_POLL', poll });
+      dispatch({ type: 'SET_MY_POLL_VOTE', optionId: null });
+    });
+
+    socket.on('poll-updated', (poll: PollState) => {
+      dispatch({ type: 'SET_ACTIVE_POLL', poll });
+    });
+
+    socket.on('poll-vote-recorded', (optionId: string) => {
+      dispatch({ type: 'SET_MY_POLL_VOTE', optionId });
+    });
+
+    socket.on('poll-ended', () => {
+      dispatch({ type: 'SET_ACTIVE_POLL', poll: null });
+      dispatch({ type: 'SET_MY_POLL_VOTE', optionId: null });
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;
@@ -221,6 +243,18 @@ export function useHostControls({
     dispatch({ type: 'SET_IS_RECORDING', recording: false });
   }, [roomId, dispatch]);
 
+  const startPoll = useCallback((question: string, options: string[]) => {
+    socketRef.current?.emit('start-poll', roomId, question, options);
+  }, [roomId]);
+
+  const answerPoll = useCallback((optionId: string) => {
+    socketRef.current?.emit('vote-poll', roomId, optionId);
+  }, [roomId]);
+
+  const endPoll = useCallback(() => {
+    socketRef.current?.emit('end-poll', roomId);
+  }, [roomId]);
+
   return {
     socket: socketRef,
     openWhiteboardForAll,
@@ -232,5 +266,8 @@ export function useHostControls({
     removeParticipant,
     notifyRecordingStarted,
     notifyRecordingStopped,
+    startPoll,
+    answerPoll,
+    endPoll,
   };
 }

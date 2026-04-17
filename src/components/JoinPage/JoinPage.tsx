@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Radio, User, Hash, ArrowRight, Clock, Crown, Users } from 'lucide-react';
 import { Button } from '../shared/Button';
 import { useTokenFetch } from '../../hooks/useTokenFetch';
+import { checkRoomHasHost } from '../../api/roomApi';
 
 const RECENT_ROOMS_KEY = 'livesession_recent_rooms';
 const MAX_RECENT = 5;
@@ -61,6 +62,26 @@ export function JoinPage() {
     if (!validate()) return;
     const room = roomName.trim();
     const username = displayName.trim();
+
+    if (joinAs === 'participant') {
+      try {
+        const hasHost = await checkRoomHasHost(room);
+        if (!hasHost) {
+          setFieldErrors((prev) => ({
+            ...prev,
+            room: 'This room is not active yet. Ask the host to join first.',
+          }));
+          return;
+        }
+      } catch (err) {
+        setFieldErrors((prev) => ({
+          ...prev,
+          room: err instanceof Error ? err.message : 'Unable to verify room status. Please try again.',
+        }));
+        return;
+      }
+    }
+
     const token = await getToken(room, username);
     if (!token) return;
     saveRecentRoom(room);

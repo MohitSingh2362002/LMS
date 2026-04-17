@@ -17,6 +17,20 @@ export interface ParticipantInfo {
   joinedAt: number;
 }
 
+export interface PollOption {
+  id: string;
+  text: string;
+  votes: number;
+}
+
+export interface PollState {
+  id: string;
+  question: string;
+  options: PollOption[];
+  isActive: boolean;
+  createdBy: string;
+}
+
 export interface SessionState {
   room: Room | null;
   localParticipant: LocalParticipant | null;
@@ -36,6 +50,8 @@ export interface SessionState {
   hostParticipants: ParticipantInfo[];
   isWhiteboardOpenByHost: boolean;
   isRecording: boolean;
+  activePoll: PollState | null;
+  myPollVoteOptionId: string | null;
 }
 
 export interface TokenResponse {
