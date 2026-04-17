@@ -31,6 +31,12 @@ export interface PollState {
   createdBy: string;
 }
 
+export interface SharedDocState {
+  url: string;
+  title: string;
+  openedBy: string;
+}
+
 export interface SessionState {
   room: Room | null;
   localParticipant: LocalParticipant | null;
@@ -52,6 +58,7 @@ export interface SessionState {
   isRecording: boolean;
   activePoll: PollState | null;
   myPollVoteOptionId: string | null;
+  sharedDoc: SharedDocState | null;
 }
 
 export interface TokenResponse {

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
 import { ConnectionQuality, ConnectionState, LocalParticipant, RemoteParticipant, Room } from 'livekit-client';
-import { ChatMessage, ParticipantInfo, PollState, SessionState } from '../types';
+import { ChatMessage, ParticipantInfo, PollState, SessionState, SharedDocState } from '../types';
 
 type SessionAction =
   | { type: 'SET_ROOM'; room: Room; localParticipant: LocalParticipant }
@@ -23,7 +23,8 @@ type SessionAction =
   | { type: 'SET_WHITEBOARD_OPEN_BY_HOST'; open: boolean }
   | { type: 'SET_IS_RECORDING'; recording: boolean }
   | { type: 'SET_ACTIVE_POLL'; poll: PollState | null }
-  | { type: 'SET_MY_POLL_VOTE'; optionId: string | null };
+  | { type: 'SET_MY_POLL_VOTE'; optionId: string | null }
+  | { type: 'SET_SHARED_DOC'; doc: SharedDocState | null };
 
 const initialState: SessionState = {
   room: null,
@@ -46,6 +47,7 @@ const initialState: SessionState = {
   isRecording: false,
   activePoll: null,
   myPollVoteOptionId: null,
+  sharedDoc: null,
 };
 
 function sessionReducer(state: SessionState, action: SessionAction): SessionState {
@@ -91,6 +93,8 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       return { ...state, activePoll: action.poll };
     case 'SET_MY_POLL_VOTE':
       return { ...state, myPollVoteOptionId: action.optionId };
+    case 'SET_SHARED_DOC':
+      return { ...state, sharedDoc: action.doc };
     default:
       return state;
   }

@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { ParticipantInfo, PollState } from '../types';
+import { ParticipantInfo, PollState, SharedDocState } from '../types';
 
 const SOCKET_URL = import.meta.env.VITE_WHITEBOARD_SOCKET_URL || 'http://localhost:3001';
 
@@ -71,6 +71,7 @@ export function useHostControls({
       isHost: boolean;
       activePoll: PollState | null;
       myPollVoteOptionId: string | null;
+      sharedDoc: SharedDocState | null;
     }) => {
       console.log('[HostControls] Init state from server:', data);
       dispatch({ type: 'SET_IS_HOST', isHost: data.isHost });
@@ -78,6 +79,7 @@ export function useHostControls({
       dispatch({ type: 'SET_HOST_PARTICIPANTS', participants: data.participants });
       dispatch({ type: 'SET_ACTIVE_POLL', poll: data.activePoll });
       dispatch({ type: 'SET_MY_POLL_VOTE', optionId: data.myPollVoteOptionId });
+      dispatch({ type: 'SET_SHARED_DOC', doc: data.sharedDoc });
     });
 
     // Host assigned
@@ -193,6 +195,14 @@ export function useHostControls({
       dispatch({ type: 'SET_MY_POLL_VOTE', optionId: null });
     });
 
+    socket.on('doc-opened', (doc: SharedDocState) => {
+      dispatch({ type: 'SET_SHARED_DOC', doc });
+    });
+
+    socket.on('doc-closed', () => {
+      dispatch({ type: 'SET_SHARED_DOC', doc: null });
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;
@@ -255,6 +265,14 @@ export function useHostControls({
     socketRef.current?.emit('end-poll', roomId);
   }, [roomId]);
 
+  const openSharedDoc = useCallback((url: string, title: string) => {
+    socketRef.current?.emit('open-doc', roomId, url, title);
+  }, [roomId]);
+
+  const closeSharedDoc = useCallback(() => {
+    socketRef.current?.emit('close-doc', roomId);
+  }, [roomId]);
+
   return {
     socket: socketRef,
     openWhiteboardForAll,
@@ -269,5 +287,7 @@ export function useHostControls({
     startPoll,
     answerPoll,
     endPoll,
+    openSharedDoc,
+    closeSharedDoc,
   };
 }

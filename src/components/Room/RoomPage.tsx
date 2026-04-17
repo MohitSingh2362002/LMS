@@ -17,6 +17,7 @@ import { EmptyState } from './EmptyState';
 import { WhiteboardPanel } from './WhiteboardPanel';
 import { ParticipantTile } from './ParticipantTile';
 import { PollPanel } from './PollPanel';
+import { DocPanel } from './DocPanel';
 import { Spinner } from '../shared/Spinner';
 import { Button } from '../shared/Button';
 
@@ -33,6 +34,7 @@ export function RoomPage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
   const [isPollPanelOpen, setIsPollPanelOpen] = useState(false);
+  const [isDocPanelOpen, setIsDocPanelOpen] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(true);
   const connectedAtRef = useRef<Date | null>(null);
@@ -111,6 +113,8 @@ export function RoomPage() {
     startPoll,
     answerPoll,
     endPoll,
+    openSharedDoc,
+    closeSharedDoc,
   } = useHostControls({
     roomId: decodedRoom,
     userName: displayName || 'User',
@@ -287,6 +291,15 @@ export function RoomPage() {
           onEndPoll={endPoll}
         />
 
+        <DocPanel
+          open={isDocPanelOpen}
+          onClose={() => setIsDocPanelOpen(false)}
+          isHost={state.isHost}
+          doc={state.sharedDoc}
+          onOpenDoc={openSharedDoc}
+          onCloseDocForAll={closeSharedDoc}
+        />
+
         {/* Video area — shown when whiteboard is NOT open */}
         {!isWhiteboardOpen && (
           <div className="flex-1 flex flex-col min-w-0">
@@ -357,6 +370,7 @@ export function RoomPage() {
         onToggleWhiteboard={handleToggleWhiteboard}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onTogglePolls={() => setIsPollPanelOpen((v) => !v)}
+        onToggleDocs={() => setIsDocPanelOpen((v) => !v)}
         onLeave={handleLeave}
         isChatOpen={isChatOpen}
         isParticipantsOpen={isParticipantsOpen}
@@ -364,6 +378,7 @@ export function RoomPage() {
         isHost={state.isHost}
         isRecording={isRecording}
         isPollPanelOpen={isPollPanelOpen}
+        isDocPanelOpen={isDocPanelOpen}
         onStartRecording={handleStartRecording}
         onStopRecording={handleStopRecording}
       />

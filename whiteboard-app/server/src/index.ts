@@ -2,6 +2,10 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 
 const app = express();
 app.use(cors({ origin: '*' }));
@@ -9,6 +13,22 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: { origin: '*' }
 });
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const uploadsDir = path.resolve(__dirname, '../uploads');
+fs.mkdirSync(uploadsDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadsDir),
+  filename: (_req, file, cb) => {
+    const safeBase = path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, '_');
+    cb(null, `${Date.now()}-${safeBase}`);
+  },
+});
+const upload = multer({ storage, limits: { fileSize: 25 * 1024 * 1024 } });
+
+app.use('/uploads', express.static(uploadsDir));
 
 // ── Types ──────────────────────────────────────────────
 interface Shape {
@@ -56,6 +76,11 @@ interface RoomState {
     createdBy: string;
     votesBySocket: Record<string, string>;
   } | null;
+  sharedDoc: {
+    url: string;
+    title: string;
+    openedBy: string;
+  } | null;
 }
 
 // ── Room State (in-memory) ─────────────────────────────
@@ -71,6 +96,7 @@ const getRoom = (roomId: string): RoomState => {
       hostName: '',
       participants: [],
       activePoll: null,
+      sharedDoc: null,
     });
   }
   return rooms.get(roomId)!;
@@ -86,6 +112,20 @@ app.get('/rooms/:roomId/host-status', (req, res) => {
   const room = rooms.get(roomId);
   const hasHost = Boolean(room?.hostSocketId);
   res.json({ roomId, hasHost });
+});
+
+app.post('/docs/upload', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    res.status(400).json({ error: 'No file uploaded' });
+    return;
+  }
+  const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${encodeURIComponent(req.file.filename)}`;
+  res.json({
+    url: fileUrl,
+    title: req.file.originalname,
+    size: req.file.size,
+    mimeType: req.file.mimetype,
+  });
 });
 
 // ── Socket.io Events ───────────────────────────────────
@@ -136,6 +176,7 @@ io.on('connection', (socket) => {
           }
         : null,
       myPollVoteOptionId: room.activePoll?.votesBySocket[socket.id] || null,
+      sharedDoc: room.sharedDoc,
     });
 
     // Notify everyone else
@@ -407,6 +448,29 @@ io.on('connection', (socket) => {
     if (room.hostSocketId !== socket.id) return;
     room.activePoll = null;
     io.to(roomId).emit('poll-ended');
+  });
+
+  // ── FEATURE 5: SHARED DOC ───────────────────────────────
+  socket.on('open-doc', (roomId: string, url: string, title?: string) => {
+    const room = getRoom(roomId);
+    if (room.hostSocketId !== socket.id) return;
+
+    const cleanUrl = (url || '').trim();
+    if (!cleanUrl) return;
+
+    room.sharedDoc = {
+      url: cleanUrl,
+      title: (title || '').trim() || 'Session Document',
+      openedBy: room.hostName || 'Host',
+    };
+    io.to(roomId).emit('doc-opened', room.sharedDoc);
+  });
+
+  socket.on('close-doc', (roomId: string) => {
+    const room = getRoom(roomId);
+    if (room.hostSocketId !== socket.id) return;
+    room.sharedDoc = null;
+    io.to(roomId).emit('doc-closed');
   });
 
   // ── DISCONNECT ──────────────────────────────────────────

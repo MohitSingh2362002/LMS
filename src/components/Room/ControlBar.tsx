@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Mic, MicOff, Video, VideoOff, MonitorUp, MonitorOff,
-  MessageSquare, Users, Settings, PhoneOff, PenTool, Circle, StopCircle, BarChart3
+  MessageSquare, Users, Settings, PhoneOff, PenTool, Circle, StopCircle, BarChart3, FileText
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useSession } from '../../context/SessionContext';
@@ -12,6 +12,7 @@ interface ControlBarProps {
   onToggleWhiteboard: () => void;
   onOpenSettings: () => void;
   onTogglePolls: () => void;
+  onToggleDocs: () => void;
   onLeave: () => void;
   isChatOpen: boolean;
   isParticipantsOpen: boolean;
@@ -19,6 +20,7 @@ interface ControlBarProps {
   isHost: boolean;
   isRecording: boolean;
   isPollPanelOpen: boolean;
+  isDocPanelOpen: boolean;
   onStartRecording: () => void;
   onStopRecording: () => void;
 }
@@ -74,6 +76,7 @@ export function ControlBar({
   onToggleWhiteboard,
   onOpenSettings,
   onTogglePolls,
+  onToggleDocs,
   onLeave,
   isChatOpen,
   isParticipantsOpen,
@@ -81,6 +84,7 @@ export function ControlBar({
   isHost,
   isRecording,
   isPollPanelOpen,
+  isDocPanelOpen,
   onStartRecording,
   onStopRecording,
 }: ControlBarProps) {
@@ -181,6 +185,12 @@ export function ControlBar({
           label="Polls"
           onClick={onTogglePolls}
           active={isPollPanelOpen}
+        />
+        <ControlButton
+          icon={<FileText size={20} />}
+          label="Docs"
+          onClick={onToggleDocs}
+          active={isDocPanelOpen}
         />
 
         <div className="w-px h-8 bg-white/10 mx-1" />
