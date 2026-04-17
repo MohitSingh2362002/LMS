@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
 import { ConnectionQuality, ConnectionState, LocalParticipant, RemoteParticipant, Room } from 'livekit-client';
-import { ChatMessage, SessionState } from '../types';
+import { ChatMessage, ParticipantInfo, SessionState } from '../types';
 
 type SessionAction =
   | { type: 'SET_ROOM'; room: Room; localParticipant: LocalParticipant }
@@ -14,7 +14,14 @@ type SessionAction =
   | { type: 'ADD_CHAT_MESSAGE'; message: ChatMessage }
   | { type: 'INCREMENT_UNREAD' }
   | { type: 'CLEAR_UNREAD' }
-  | { type: 'SET_PINNED'; sid: string | null };
+  | { type: 'SET_PINNED'; sid: string | null }
+  // Host control actions
+  | { type: 'SET_IS_HOST'; isHost: boolean }
+  | { type: 'SET_HOST_INFO'; hostSocketId: string; hostName: string }
+  | { type: 'SET_HOST_PARTICIPANTS'; participants: ParticipantInfo[] }
+  | { type: 'UPDATE_HOST_PARTICIPANTS'; updater: (prev: ParticipantInfo[]) => ParticipantInfo[] }
+  | { type: 'SET_WHITEBOARD_OPEN_BY_HOST'; open: boolean }
+  | { type: 'SET_IS_RECORDING'; recording: boolean };
 
 const initialState: SessionState = {
   room: null,
@@ -28,6 +35,13 @@ const initialState: SessionState = {
   chatMessages: [],
   unreadCount: 0,
   pinnedParticipantSid: null,
+  // Host control defaults
+  isHost: false,
+  hostSocketId: null,
+  hostName: '',
+  hostParticipants: [],
+  isWhiteboardOpenByHost: false,
+  isRecording: false,
 };
 
 function sessionReducer(state: SessionState, action: SessionAction): SessionState {
@@ -56,6 +70,19 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       return { ...state, unreadCount: 0 };
     case 'SET_PINNED':
       return { ...state, pinnedParticipantSid: action.sid };
+    // Host control reducers
+    case 'SET_IS_HOST':
+      return { ...state, isHost: action.isHost };
+    case 'SET_HOST_INFO':
+      return { ...state, hostSocketId: action.hostSocketId, hostName: action.hostName };
+    case 'SET_HOST_PARTICIPANTS':
+      return { ...state, hostParticipants: action.participants };
+    case 'UPDATE_HOST_PARTICIPANTS':
+      return { ...state, hostParticipants: action.updater(state.hostParticipants) };
+    case 'SET_WHITEBOARD_OPEN_BY_HOST':
+      return { ...state, isWhiteboardOpenByHost: action.open };
+    case 'SET_IS_RECORDING':
+      return { ...state, isRecording: action.recording };
     default:
       return state;
   }

@@ -61,9 +61,11 @@ interface WhiteboardPanelProps {
   onRequestOpen: () => void;
   roomName: string;
   userName: string;
+  isHost?: boolean;
 }
 
-export function WhiteboardPanel({ open, onClose, onRequestOpen, roomName, userName }: WhiteboardPanelProps) {
+export function WhiteboardPanel({ open, onClose, onRequestOpen, roomName, userName, isHost = true }: WhiteboardPanelProps) {
+  const readOnly = !isHost;
   const { state } = useSession();
   const wb = useWhiteboardState();
   const [cursors, setCursors] = useState<WBCollaboratorCursor[]>([]);
@@ -170,6 +172,7 @@ export function WhiteboardPanel({ open, onClose, onRequestOpen, roomName, userNa
   }, [open, wb.selectedIds]);
 
   const getCursor = () => {
+    if (readOnly) return 'default';
     if (wb.tool === 'hand' || isPanning.current) return 'grab';
     if (wb.tool === 'eraser') return 'none';
     if (wb.tool === 'text') return 'text';
@@ -324,8 +327,26 @@ export function WhiteboardPanel({ open, onClose, onRequestOpen, roomName, userNa
   // inside the room's main area. When `open` is false, it stays mounted
   // but hidden (to keep socket alive).
 
+  // Handlers: disabled when readOnly
+  const pointerDown = readOnly ? undefined : handlePointerDown;
+  const pointerMove = readOnly ? undefined : handlePointerMove;
+  const pointerUp = readOnly ? undefined : handlePointerUp;
+  const pointerLeave = readOnly ? undefined : handlePointerLeave;
+
   return (
     <div className={clsx('flex-1 flex flex-col min-w-0 relative', !open && 'hidden')}>
+      {/* View-only badge for participants */}
+      {readOnly && (
+        <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 bg-surface-800/80 border-b border-white/8">
+          <div className="flex items-center gap-2">
+            <span className="text-white/70 text-sm font-medium">Whiteboard</span>
+            <span className="text-[11px] px-2 py-0.5 bg-white/10 text-white/50 rounded-full font-medium">
+              View only
+            </span>
+          </div>
+          <span className="text-white/30 text-xs">Controlled by host</span>
+        </div>
+      )}
       {/* Canvas area */}
       <div
         ref={canvasContainerRef}
@@ -336,14 +357,14 @@ export function WhiteboardPanel({ open, onClose, onRequestOpen, roomName, userNa
           ref={stageRef}
           width={canvasSize.width}
           height={canvasSize.height}
-          onMouseDown={handlePointerDown}
-          onMouseMove={handlePointerMove}
-          onMouseUp={handlePointerUp}
-          onMouseLeave={handlePointerLeave}
-          onTouchStart={handlePointerDown}
-          onTouchMove={handlePointerMove}
-          onTouchEnd={handlePointerUp}
-          onWheel={(e) => handleWheel(stageRef, e)}
+          onMouseDown={pointerDown}
+          onMouseMove={pointerMove}
+          onMouseUp={pointerUp}
+          onMouseLeave={pointerLeave}
+          onTouchStart={pointerDown}
+          onTouchMove={pointerMove}
+          onTouchEnd={pointerUp}
+          onWheel={readOnly ? undefined : (e) => handleWheel(stageRef, e)}
         >
           <Layer listening={false}>{gridDots}</Layer>
           <Layer>
@@ -357,12 +378,13 @@ export function WhiteboardPanel({ open, onClose, onRequestOpen, roomName, userNa
           </Layer>
         </Stage>
 
-        {/* Eraser cursor */}
-        {wb.tool === 'eraser' && eraserPos.visible && (
+        {/* Eraser cursor — hidden for participants */}
+        {!readOnly && wb.tool === 'eraser' && eraserPos.visible && (
           <div className="absolute pointer-events-none" style={{ left: eraserPos.x - 16, top: eraserPos.y - 16, width: 32, height: 32, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.05)' }} />
         )}
 
-        {/* ═══ Zoom-style FLOATING TOOLBAR (bottom center) ═══ */}
+        {/* ═══ Zoom-style FLOATING TOOLBAR (bottom center) — HOST ONLY ═══ */}
+        {!readOnly && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20">
           <div
             className="flex items-center gap-0.5 px-2 py-1.5 rounded-2xl shadow-2xl border border-white/10"
@@ -459,16 +481,17 @@ export function WhiteboardPanel({ open, onClose, onRequestOpen, roomName, userNa
             {/* Divider */}
             <div className="w-px h-7 bg-white/10 mx-1" />
 
-            {/* Close whiteboard */}
+            {/* Close whiteboard — host only */}
             <button
               onClick={onClose}
-              className="w-9 h-9 flex items-center justify-center rounded-xl text-white/50 hover:text-white hover:bg-white/8 transition-colors"
-              title="Close Whiteboard"
+              className="w-9 h-9 flex items-center justify-center rounded-xl text-white/50 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+              title="Close for everyone"
             >
               <X size={16} />
             </button>
           </div>
         </div>
+        )}
 
         {/* Zoom level badge (bottom-left) */}
         <div className="absolute bottom-4 left-4 bg-black/40 backdrop-blur-md text-white/50 text-[11px] font-semibold px-2.5 py-1 rounded-lg pointer-events-none border border-white/5">

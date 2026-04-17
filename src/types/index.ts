@@ -8,6 +8,15 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
+export interface ParticipantInfo {
+  socketId: string;
+  name: string;
+  color: string;
+  isMuted: boolean;
+  isVideoOff: boolean;
+  joinedAt: number;
+}
+
 export interface SessionState {
   room: Room | null;
   localParticipant: LocalParticipant | null;
@@ -20,6 +29,13 @@ export interface SessionState {
   chatMessages: ChatMessage[];
   unreadCount: number;
   pinnedParticipantSid: string | null;
+  // Host control fields
+  isHost: boolean;
+  hostSocketId: string | null;
+  hostName: string;
+  hostParticipants: ParticipantInfo[];
+  isWhiteboardOpenByHost: boolean;
+  isRecording: boolean;
 }
 
 export interface TokenResponse {

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Mic, MicOff, Video, VideoOff, MonitorUp, MonitorOff,
-  MessageSquare, Users, Settings, LogOut, PhoneOff, PenTool
+  MessageSquare, Users, Settings, LogOut, PhoneOff, PenTool, Circle, StopCircle
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useSession } from '../../context/SessionContext';
@@ -15,6 +15,10 @@ interface ControlBarProps {
   isChatOpen: boolean;
   isParticipantsOpen: boolean;
   isWhiteboardOpen: boolean;
+  isHost: boolean;
+  isRecording: boolean;
+  onStartRecording: () => void;
+  onStopRecording: () => void;
 }
 
 interface ControlButtonProps {
@@ -26,9 +30,10 @@ interface ControlButtonProps {
   danger?: boolean;
   badge?: number;
   disabled?: boolean;
+  activeColor?: string;
 }
 
-function ControlButton({ icon, activeIcon, label, onClick, active, danger, badge, disabled }: ControlButtonProps) {
+function ControlButton({ icon, activeIcon, label, onClick, active, danger, badge, disabled, activeColor }: ControlButtonProps) {
   return (
     <button
       onClick={onClick}
@@ -38,9 +43,15 @@ function ControlButton({ icon, activeIcon, label, onClick, active, danger, badge
         danger
           ? 'bg-rose-500/20 hover:bg-rose-500 text-rose-400 hover:text-white'
           : active
-          ? 'bg-brand-600/30 text-brand-300 hover:bg-brand-600/50'
+          ? activeColor
+            ? ''
+            : 'bg-brand-600/30 text-brand-300 hover:bg-brand-600/50'
           : 'hover:bg-white/10 text-white/60 hover:text-white'
       )}
+      style={active && activeColor ? {
+        backgroundColor: `${activeColor}30`,
+        color: activeColor,
+      } : undefined}
     >
       <span className="relative">
         {active && activeIcon ? activeIcon : icon}
@@ -64,6 +75,10 @@ export function ControlBar({
   isChatOpen,
   isParticipantsOpen,
   isWhiteboardOpen,
+  isHost,
+  isRecording,
+  onStartRecording,
+  onStopRecording,
 }: ControlBarProps) {
   const { state, toggleMic, toggleCamera, toggleScreenShare } = useSession();
   const { isMicEnabled, isCameraEnabled, isScreenSharing, unreadCount } = state;
@@ -95,19 +110,47 @@ export function ControlBar({
           onClick={toggleCamera}
           active={!isCameraEnabled}
         />
-        <ControlButton
-          icon={<MonitorUp size={20} />}
-          activeIcon={<MonitorOff size={20} />}
-          label={isScreenSharing ? 'Stop Share' : 'Share Screen'}
-          onClick={toggleScreenShare}
-          active={isScreenSharing}
-        />
-        <ControlButton
-          icon={<PenTool size={20} />}
-          label="Whiteboard"
-          onClick={onToggleWhiteboard}
-          active={isWhiteboardOpen}
-        />
+        {isHost && (
+          <ControlButton
+            icon={<MonitorUp size={20} />}
+            activeIcon={<MonitorOff size={20} />}
+            label={isScreenSharing ? 'Stop Share' : 'Share Screen'}
+            onClick={toggleScreenShare}
+            active={isScreenSharing}
+          />
+        )}
+
+        {/* Whiteboard button — only HOST sees the toggle */}
+        {isHost && (
+          <ControlButton
+            icon={<PenTool size={20} />}
+            label="Whiteboard"
+            onClick={onToggleWhiteboard}
+            active={isWhiteboardOpen}
+          />
+        )}
+
+        {/* Host-only record button */}
+        {isHost && (
+          <ControlButton
+            icon={isRecording ? <StopCircle size={20} /> : <Circle size={20} />}
+            label={isRecording ? 'Stop Rec' : 'Record'}
+            onClick={isRecording ? onStopRecording : onStartRecording}
+            active={isRecording}
+            activeColor="#ef4444"
+          />
+        )}
+
+        {/* Participants see REC indicator when host is recording */}
+        {!isHost && isRecording && (
+          <div className="flex items-center gap-1.5 px-3 py-2 bg-rose-500/10 border border-rose-500/20 rounded-xl">
+            <div
+              className="w-2 h-2 rounded-full bg-rose-500"
+              style={{ animation: 'pulse 1.5s ease-in-out infinite' }}
+            />
+            <span className="text-rose-400 text-xs font-medium">REC</span>
+          </div>
+        )}
 
         <div className="w-px h-8 bg-white/10 mx-1" />
 
@@ -131,6 +174,14 @@ export function ControlBar({
         />
 
         <div className="w-px h-8 bg-white/10 mx-1" />
+
+        {/* Host badge indicator */}
+        {isHost && (
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-brand-600/20 border border-brand-500/30 rounded-lg mr-1">
+            <span className="text-sm">♛</span>
+            <span className="text-brand-300 text-[10px] font-semibold hidden sm:block">HOST</span>
+          </div>
+        )}
 
         <button
           onClick={handleLeave}

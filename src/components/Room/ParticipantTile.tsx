@@ -3,6 +3,7 @@ import { Participant, Track, LocalParticipant, ParticipantEvent } from 'livekit-
 import { MicOff, Pin } from 'lucide-react';
 import clsx from 'clsx';
 import { Avatar } from '../shared/Avatar';
+import { ParticipantInfo } from '../../types';
 
 interface ParticipantTileProps {
   participant: Participant;
@@ -10,13 +11,20 @@ interface ParticipantTileProps {
   isPinned?: boolean;
   onPin?: () => void;
   className?: string;
+  hostSocketId?: string | null;
+  hostParticipants?: ParticipantInfo[];
 }
 
-export function ParticipantTile({ participant, isLocal, isPinned, onPin, className }: ParticipantTileProps) {
+export function ParticipantTile({ participant, isLocal, isPinned, onPin, className, hostSocketId, hostParticipants }: ParticipantTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const name = participant.name || participant.identity;
+
+  // Find matching host participant to check host status and muted-by-host
+  const hostParticipant = hostParticipants?.find(hp => hp.name === name);
+  const isHostParticipant = hostParticipant?.socketId === hostSocketId;
+  const isMutedByHost = hostParticipant?.isMuted && !isHostParticipant;
 
   // Find camera track
   const cameraPublication = participant.getTrackPublication(Track.Source.Camera);
@@ -89,6 +97,24 @@ export function ParticipantTile({ participant, isLocal, isPinned, onPin, classNa
       {/* Gradient overlay */}
       <div className="absolute inset-x-0 bottom-0 h-14 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
 
+      {/* Host badge */}
+      {isHostParticipant && (
+        <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold text-white"
+          style={{ background: 'rgba(124,58,237,0.85)' }}
+        >
+          <span>♛</span> Host
+        </div>
+      )}
+
+      {/* Muted by host badge */}
+      {isMutedByHost && (
+        <div className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium text-white"
+          style={{ background: 'rgba(239,68,68,0.85)' }}
+        >
+          <span>🔇</span> Muted by host
+        </div>
+      )}
+
       {/* Name label */}
       <div className="absolute bottom-2 left-2 flex items-center gap-1.5">
         <span className="text-white text-xs font-medium drop-shadow px-1.5 py-0.5 bg-black/40 rounded backdrop-blur-sm">
@@ -98,7 +124,7 @@ export function ParticipantTile({ participant, isLocal, isPinned, onPin, classNa
       </div>
 
       {/* Mic muted indicator */}
-      {isMicMuted && (
+      {isMicMuted && !isMutedByHost && (
         <div className="absolute top-2 right-2 p-1 bg-rose-500/90 rounded-full">
           <MicOff size={10} className="text-white" />
         </div>
@@ -106,7 +132,8 @@ export function ParticipantTile({ participant, isLocal, isPinned, onPin, classNa
 
       {/* Pin indicator / button */}
       <div className={clsx(
-        'absolute top-2 left-2 p-1 bg-black/40 rounded-full backdrop-blur-sm transition-opacity',
+        'absolute top-2 p-1 bg-black/40 rounded-full backdrop-blur-sm transition-opacity',
+        isHostParticipant ? 'left-[70px]' : 'left-2',
         isPinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
       )}>
         <Pin size={10} className={clsx(isPinned ? 'text-brand-300' : 'text-white/60')} />

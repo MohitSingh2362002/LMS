@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Radio, User, Hash, ArrowRight, Clock } from 'lucide-react';
+import { Radio, User, Hash, ArrowRight, Clock, Crown, Users } from 'lucide-react';
 import { Button } from '../shared/Button';
 import { useTokenFetch } from '../../hooks/useTokenFetch';
 
@@ -27,11 +27,19 @@ function validateRoomName(name: string): string | null {
   return null;
 }
 
+const AVATAR_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#e91e63'];
+function getColorFromName(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
 export function JoinPage() {
   const navigate = useNavigate();
   const { loading, error, getToken } = useTokenFetch();
   const [displayName, setDisplayName] = useState('');
   const [roomName, setRoomName] = useState('');
+  const [joinAs, setJoinAs] = useState<'host' | 'participant'>('host');
   const [fieldErrors, setFieldErrors] = useState<{ name?: string; room?: string }>({});
   const [recentRooms, setRecentRooms] = useState<string[]>([]);
 
@@ -57,7 +65,13 @@ export function JoinPage() {
     if (!token) return;
     saveRecentRoom(room);
     navigate(`/room/${encodeURIComponent(room)}`, {
-      state: { token, displayName: username, roomName: room },
+      state: {
+        token,
+        displayName: username,
+        roomName: room,
+        joinAs,
+        userColor: getColorFromName(username),
+      },
     });
   };
 
@@ -85,6 +99,42 @@ export function JoinPage() {
           <p className="text-white/50 text-sm mb-7">Enter your details to connect in real time</p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Join As Toggle */}
+            <div>
+              <label className="block text-white/70 text-sm font-medium mb-2">Join as</label>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setJoinAs('host')}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-medium transition-all duration-200 ${
+                    joinAs === 'host'
+                      ? 'bg-brand-600 border-brand-500 text-white shadow-lg shadow-brand-600/20'
+                      : 'bg-surface-800 border-white/10 text-white/50 hover:text-white hover:bg-surface-700'
+                  }`}
+                >
+                  <Crown size={15} />
+                  Join as Host
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setJoinAs('participant')}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-medium transition-all duration-200 ${
+                    joinAs === 'participant'
+                      ? 'bg-brand-600 border-brand-500 text-white shadow-lg shadow-brand-600/20'
+                      : 'bg-surface-800 border-white/10 text-white/50 hover:text-white hover:bg-surface-700'
+                  }`}
+                >
+                  <Users size={15} />
+                  Join as Participant
+                </button>
+              </div>
+              <p className="text-white/30 text-xs mt-1.5">
+                {joinAs === 'host'
+                  ? 'You\'ll have control over whiteboard, mute, and recording.'
+                  : 'You\'ll follow the host\'s controls.'}
+              </p>
+            </div>
+
             {/* Display Name */}
             <div>
               <label className="block text-white/70 text-sm font-medium mb-1.5">Display Name</label>

@@ -1,10 +1,12 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ConnectionState } from 'livekit-client';
 import toast from 'react-hot-toast';
 import { useLiveKitRoom } from '../../hooks/useLiveKitRoom';
 import { useSession } from '../../context/SessionContext';
 import { useParticipantGrid } from '../../hooks/useParticipantGrid';
+import { useHostControls } from '../../hooks/useHostControls';
+import { useSessionRecording } from '../../hooks/useSessionRecording';
 import { VideoGrid } from './VideoGrid';
 import { ControlBar } from './ControlBar';
 import { ChatSidebar } from './ChatSidebar';
@@ -22,7 +24,7 @@ export function RoomPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { connect, disconnect } = useLiveKitRoom();
-  const { state } = useSession();
+  const { state, dispatch } = useSession();
   const { total, allParticipants } = useParticipantGrid();
 
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -36,7 +38,123 @@ export function RoomPage() {
 
   const token = location.state?.token as string | undefined;
   const displayName = location.state?.displayName as string | undefined;
+  const joinAs = (location.state?.joinAs as 'host' | 'participant') || 'participant';
+  const userColor = (location.state?.userColor as string) || '#7C3AED';
   const decodedRoom = roomName ? decodeURIComponent(roomName) : '';
+
+  // Session recording (actual MediaRecorder)
+  const {
+    isRecording: isLocalRecording,
+    startRecording: startLocalRecording,
+    stopRecording: stopLocalRecording,
+  } = useSessionRecording();
+
+  // Force mute handler — ONLY called when host explicitly mutes via socket
+  const handleForceMute = useCallback(async () => {
+    if (!state.room) return;
+    try {
+      await state.room.localParticipant.setMicrophoneEnabled(false);
+      dispatch({ type: 'SET_MIC_ENABLED', enabled: false });
+    } catch (err) {
+      console.error('[ForceMute] Error:', err);
+    }
+    toast('You have been muted by the host', {
+      icon: '🔇',
+      style: { background: '#1e1e2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+    });
+  }, [state.room, dispatch]);
+
+  // Force unmute notification
+  const handleForceUnmute = useCallback(() => {
+    toast('The host has allowed you to unmute', {
+      icon: '🎤',
+      style: { background: '#1e1e2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+    });
+  }, []);
+
+  const handleForceVideoOff = useCallback(async () => {
+    if (!state.room) return;
+    try {
+      await state.room.localParticipant.setCameraEnabled(false);
+      dispatch({ type: 'SET_CAMERA_ENABLED', enabled: false });
+    } catch (err) {
+      console.error('[ForceVideoOff] Error:', err);
+    }
+    toast('Host stopped your video', {
+      icon: '📷',
+      style: { background: '#1e1e2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+    });
+  }, [state.room, dispatch]);
+
+  const handleForceRemoved = useCallback(() => {
+    disconnect();
+    toast('Host removed you from the room', {
+      icon: '🚪',
+      style: { background: '#1e1e2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+    });
+    navigate('/');
+  }, [disconnect, navigate]);
+
+  // Host controls hook
+  const {
+    openWhiteboardForAll,
+    closeWhiteboardForAll,
+    muteParticipant,
+    unmuteParticipant,
+    muteAll,
+    stopParticipantVideo,
+    removeParticipant,
+    notifyRecordingStarted,
+    notifyRecordingStopped,
+  } = useHostControls({
+    roomId: decodedRoom,
+    userName: displayName || 'User',
+    userColor,
+    joinAs,
+    onForceMute: handleForceMute,
+    onForceUnmute: handleForceUnmute,
+    onForceVideoOff: handleForceVideoOff,
+    onForceRemoved: handleForceRemoved,
+    dispatch,
+  });
+
+  // Combined recording state (local recording OR remote host recording notification)
+  const isRecording = isLocalRecording || state.isRecording;
+
+  // Handle start recording (host only)
+  const handleStartRecording = useCallback(async () => {
+    const success = await startLocalRecording();
+    if (success) {
+      notifyRecordingStarted();
+      toast.success('Recording started', {
+        style: { background: '#1e1e2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+      });
+    } else {
+      toast.error('Failed to start recording. Please allow screen sharing.', {
+        style: { background: '#1e1e2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+      });
+    }
+  }, [startLocalRecording, notifyRecordingStarted]);
+
+  // Handle stop recording (host only)
+  const handleStopRecording = useCallback(async () => {
+    const meta = await stopLocalRecording();
+    if (meta) {
+      notifyRecordingStopped(meta);
+      toast.success(`Recording saved (${(meta.size / 1024 / 1024).toFixed(1)} MB)`, {
+        style: { background: '#1e1e2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+      });
+    }
+  }, [stopLocalRecording, notifyRecordingStopped]);
+
+  // Sync whiteboard open state from host control (participant side only)
+  useEffect(() => {
+    if (!state.isHost && state.isWhiteboardOpenByHost) {
+      setIsWhiteboardOpen(true);
+    } else if (!state.isHost && !state.isWhiteboardOpenByHost) {
+      setIsWhiteboardOpen(false);
+    }
+  }, [state.isHost, state.isWhiteboardOpenByHost]);
 
   useEffect(() => {
     if (!token) {
@@ -77,12 +195,30 @@ export function RoomPage() {
   }, [state.connectionState, connectedAt]);
 
   const handleLeave = () => {
+    // Stop recording if active
+    if (isLocalRecording) {
+      stopLocalRecording();
+    }
     disconnect();
     navigate('/');
   };
 
   const handleRetry = () => {
     navigate('/');
+  };
+
+  // Whiteboard toggle for host
+  const handleToggleWhiteboard = () => {
+    if (state.isHost) {
+      if (isWhiteboardOpen) {
+        closeWhiteboardForAll();
+        setIsWhiteboardOpen(false);
+      } else {
+        openWhiteboardForAll();
+        setIsWhiteboardOpen(true);
+      }
+    }
+    // Participants can't toggle whiteboard
   };
 
   if (isConnecting) {
@@ -122,7 +258,18 @@ export function RoomPage() {
       {/* Main area */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Participants panel */}
-        <ParticipantsPanel open={isParticipantsOpen} onClose={() => setIsParticipantsOpen(false)} />
+        <ParticipantsPanel
+          open={isParticipantsOpen}
+          onClose={() => setIsParticipantsOpen(false)}
+          isHost={state.isHost}
+          hostParticipants={state.hostParticipants}
+          hostSocketId={state.hostSocketId}
+          onMute={muteParticipant}
+          onUnmute={unmuteParticipant}
+          onMuteAll={muteAll}
+          onStopVideo={stopParticipantVideo}
+          onRemoveParticipant={removeParticipant}
+        />
 
         {/* Video area — shown when whiteboard is NOT open */}
         {!isWhiteboardOpen && (
@@ -150,10 +297,16 @@ export function RoomPage() {
         {/* Whiteboard — ALWAYS mounted so socket stays connected */}
         <WhiteboardPanel
           open={isWhiteboardOpen}
-          onClose={() => setIsWhiteboardOpen(false)}
+          onClose={() => {
+            if (state.isHost) {
+              closeWhiteboardForAll();
+            }
+            setIsWhiteboardOpen(false);
+          }}
           onRequestOpen={() => setIsWhiteboardOpen(true)}
           roomName={decodedRoom}
           userName={displayName || 'User'}
+          isHost={state.isHost}
         />
 
         {/* Video strip on right — stacked tiles when whiteboard is open */}
@@ -169,6 +322,8 @@ export function RoomPage() {
                   participant={p}
                   isLocal={p.sid === state.localParticipant?.sid}
                   className="w-full h-full"
+                  hostSocketId={state.hostSocketId}
+                  hostParticipants={state.hostParticipants}
                 />
               </div>
             ))}
@@ -183,12 +338,16 @@ export function RoomPage() {
       <ControlBar
         onToggleChat={() => setIsChatOpen((v) => !v)}
         onToggleParticipants={() => setIsParticipantsOpen((v) => !v)}
-        onToggleWhiteboard={() => setIsWhiteboardOpen((v) => !v)}
+        onToggleWhiteboard={handleToggleWhiteboard}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onLeave={handleLeave}
         isChatOpen={isChatOpen}
         isParticipantsOpen={isParticipantsOpen}
         isWhiteboardOpen={isWhiteboardOpen}
+        isHost={state.isHost}
+        isRecording={isRecording}
+        onStartRecording={handleStartRecording}
+        onStopRecording={handleStopRecording}
       />
 
       {/* Settings modal */}

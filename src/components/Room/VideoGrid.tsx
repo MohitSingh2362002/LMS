@@ -53,7 +53,7 @@ function computeGrid(count: number, containerWidth: number, containerHeight: num
 export function VideoGrid() {
   const { state } = useSession();
   const { allParticipants, pinnedParticipant } = useParticipantGrid();
-  const { connectionState, localParticipant, pinnedParticipantSid } = state;
+  const { connectionState, localParticipant, pinnedParticipantSid, hostSocketId, hostParticipants } = state;
   const { pinParticipant } = useSession();
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
@@ -116,6 +116,8 @@ export function VideoGrid() {
             isPinned
             onPin={() => handlePin(pinnedParticipant.sid)}
             className="w-full h-full"
+            hostSocketId={hostSocketId}
+            hostParticipants={hostParticipants}
           />
         </div>
 
@@ -129,6 +131,8 @@ export function VideoGrid() {
                 isLocal={p.sid === localParticipant?.sid}
                 onPin={() => handlePin(p.sid)}
                 className="w-36 h-24 flex-shrink-0"
+                hostSocketId={hostSocketId}
+                hostParticipants={hostParticipants}
               />
             ))}
           </div>
@@ -169,6 +173,8 @@ export function VideoGrid() {
           isPinned={false}
           onPin={() => handlePin(p.sid)}
           className="w-full h-full"
+          hostSocketId={hostSocketId}
+          hostParticipants={hostParticipants}
         />
       ))}
     </div>
