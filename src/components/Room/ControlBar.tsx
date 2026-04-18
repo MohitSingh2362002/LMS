@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Mic, MicOff, Video, VideoOff, MonitorUp, MonitorOff,
-  MessageSquare, Users, Settings, PhoneOff, PenTool, Circle, StopCircle, BarChart3, FileText
+  MessageSquare, Users, Settings, PhoneOff, PenTool, Circle, StopCircle, BarChart3, FileText,
+  LogOut, OctagonAlert,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useSession } from '../../context/SessionContext';
@@ -14,6 +15,8 @@ interface ControlBarProps {
   onTogglePolls: () => void;
   onToggleDocs: () => void;
   onLeave: () => void;
+  /** Host only: end session for all participants (LiveKit + signaling). */
+  onEndCallForAll?: () => void;
   isChatOpen: boolean;
   isParticipantsOpen: boolean;
   isWhiteboardOpen: boolean;
@@ -78,6 +81,7 @@ export function ControlBar({
   onTogglePolls,
   onToggleDocs,
   onLeave,
+  onEndCallForAll,
   isChatOpen,
   isParticipantsOpen,
   isWhiteboardOpen,
@@ -91,14 +95,41 @@ export function ControlBar({
   const { state, toggleMic, toggleCamera, toggleScreenShare } = useSession();
   const { isMicEnabled, isCameraEnabled, isScreenSharing, unreadCount } = state;
   const [leaving, setLeaving] = useState(false);
+  const [hostLeaveOpen, setHostLeaveOpen] = useState(false);
+  const hostLeaveRef = useRef<HTMLDivElement>(null);
 
-  const handleLeave = () => {
+  useEffect(() => {
+    if (!hostLeaveOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (hostLeaveRef.current && !hostLeaveRef.current.contains(e.target as Node)) {
+        setHostLeaveOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [hostLeaveOpen]);
+
+  const handleLeaveButtonClick = () => {
+    if (isHost) {
+      setHostLeaveOpen((o) => !o);
+      return;
+    }
     if (leaving) {
       onLeave();
     } else {
       setLeaving(true);
       setTimeout(() => setLeaving(false), 3000);
     }
+  };
+
+  const handleHostLeaveRoom = () => {
+    setHostLeaveOpen(false);
+    onLeave();
+  };
+
+  const handleHostEndCall = () => {
+    setHostLeaveOpen(false);
+    onEndCallForAll?.();
   };
 
   return (
@@ -203,20 +234,64 @@ export function ControlBar({
           </div>
         )}
 
-        <button
-          onClick={handleLeave}
-          className={clsx(
-            'flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all duration-150',
-            leaving
-              ? 'bg-rose-500 text-white'
-              : 'bg-rose-500/20 hover:bg-rose-500 text-rose-400 hover:text-white'
+        <div className="relative" ref={hostLeaveRef}>
+          <button
+            type="button"
+            onClick={handleLeaveButtonClick}
+            className={clsx(
+              'flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all duration-150',
+              isHost
+                ? hostLeaveOpen
+                  ? 'bg-rose-500 text-white'
+                  : 'bg-rose-500/20 hover:bg-rose-500 text-rose-400 hover:text-white'
+                : leaving
+                  ? 'bg-rose-500 text-white'
+                  : 'bg-rose-500/20 hover:bg-rose-500 text-rose-400 hover:text-white'
+            )}
+          >
+            <PhoneOff size={20} />
+            <span className="text-[10px] font-medium hidden sm:block">
+              {isHost ? (hostLeaveOpen ? 'Close' : 'Exit') : leaving ? 'Click again' : 'Leave'}
+            </span>
+          </button>
+
+          {isHost && hostLeaveOpen && (
+            <div
+              className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-[min(100vw-2rem,18rem)] rounded-xl border border-white/10 bg-surface-900 shadow-xl py-1 z-50"
+              role="menu"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={handleHostLeaveRoom}
+                className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-white/5 transition-colors rounded-t-lg"
+              >
+                <LogOut size={18} className="text-white/70 mt-0.5 flex-shrink-0" />
+                <span>
+                  <span className="block text-sm text-white font-medium">Leave room</span>
+                  <span className="block text-[11px] text-white/45 mt-0.5 leading-snug">
+                    Others stay in the call; host passes to someone else if needed.
+                  </span>
+                </span>
+              </button>
+              <div className="h-px bg-white/8 mx-2" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={handleHostEndCall}
+                className="w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-rose-500/15 transition-colors rounded-b-lg"
+              >
+                <OctagonAlert size={18} className="text-rose-400 mt-0.5 flex-shrink-0" />
+                <span>
+                  <span className="block text-sm text-rose-300 font-medium">End call for everyone</span>
+                  <span className="block text-[11px] text-white/45 mt-0.5 leading-snug">
+                    Ends the session and disconnects all participants.
+                  </span>
+                </span>
+              </button>
+            </div>
           )}
-        >
-          <PhoneOff size={20} />
-          <span className="text-[10px] font-medium hidden sm:block">
-            {leaving ? 'Click again' : 'Leave'}
-          </span>
-        </button>
+        </div>
       </div>
     </div>
   );

@@ -99,6 +99,18 @@ export function RoomPage() {
     navigate('/');
   }, [disconnect, navigate]);
 
+  const handleSessionEnded = useCallback(() => {
+    if (isLocalRecording) {
+      stopLocalRecording();
+    }
+    disconnect();
+    toast('This session has ended.', {
+      icon: '☎️',
+      style: { background: '#1e1e2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+    });
+    navigate('/');
+  }, [disconnect, navigate, isLocalRecording, stopLocalRecording]);
+
   // Host controls hook
   const {
     openWhiteboardForAll,
@@ -115,6 +127,7 @@ export function RoomPage() {
     endPoll,
     openSharedDoc,
     closeSharedDoc,
+    endSessionForAll,
   } = useHostControls({
     roomId: decodedRoom,
     userName: displayName || 'User',
@@ -124,6 +137,7 @@ export function RoomPage() {
     onForceUnmute: handleForceUnmute,
     onForceVideoOff: handleForceVideoOff,
     onForceRemoved: handleForceRemoved,
+    onSessionEnded: handleSessionEnded,
     dispatch,
   });
 
@@ -211,6 +225,10 @@ export function RoomPage() {
     disconnect();
     navigate('/');
   };
+
+  const handleEndCallForAll = useCallback(() => {
+    endSessionForAll();
+  }, [endSessionForAll]);
 
   const handleRetry = () => {
     navigate('/');
@@ -372,6 +390,7 @@ export function RoomPage() {
         onTogglePolls={() => setIsPollPanelOpen((v) => !v)}
         onToggleDocs={() => setIsDocPanelOpen((v) => !v)}
         onLeave={handleLeave}
+        onEndCallForAll={state.isHost ? handleEndCallForAll : undefined}
         isChatOpen={isChatOpen}
         isParticipantsOpen={isParticipantsOpen}
         isWhiteboardOpen={isWhiteboardOpen}

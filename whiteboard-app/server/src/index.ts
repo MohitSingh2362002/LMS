@@ -473,13 +473,29 @@ io.on('connection', (socket) => {
     io.to(roomId).emit('doc-closed');
   });
 
+  // Host ends the session for everyone (LiveKit + signaling teardown on clients)
+  socket.on('host-end-session', async (roomId: string) => {
+    const room = rooms.get(roomId);
+    if (!room || room.hostSocketId !== socket.id) return;
+
+    io.to(roomId).emit('session-ended');
+    rooms.delete(roomId);
+
+    const socketsInRoom = await io.in(roomId).fetchSockets();
+    for (const s of socketsInRoom) {
+      s.disconnect(true);
+    }
+    console.log(`🛑 Host ended session for room: ${roomId}`);
+  });
+
   // ── DISCONNECT ──────────────────────────────────────────
 
   socket.on('disconnect', () => {
     console.log(`💤 Client disconnected: ${socket.id}`);
     if (!currentRoom) return;
 
-    const room = getRoom(currentRoom);
+    const room = rooms.get(currentRoom);
+    if (!room) return;
 
     if (room.activePoll) {
       const votedOptionId = room.activePoll.votesBySocket[socket.id];

@@ -13,6 +13,7 @@ interface UseHostControlsOptions {
   onForceUnmute: () => void;
   onForceVideoOff: () => void;
   onForceRemoved: () => void;
+  onSessionEnded: () => void;
   dispatch: React.Dispatch<any>;
 }
 
@@ -25,13 +26,26 @@ export function useHostControls({
   onForceUnmute,
   onForceVideoOff,
   onForceRemoved,
+  onSessionEnded,
   dispatch,
 }: UseHostControlsOptions) {
   const socketRef = useRef<Socket | null>(null);
-  const callbacksRef = useRef({ onForceMute, onForceUnmute, onForceVideoOff, onForceRemoved });
+  const callbacksRef = useRef({
+    onForceMute,
+    onForceUnmute,
+    onForceVideoOff,
+    onForceRemoved,
+    onSessionEnded,
+  });
 
   useEffect(() => {
-    callbacksRef.current = { onForceMute, onForceUnmute, onForceVideoOff, onForceRemoved };
+    callbacksRef.current = {
+      onForceMute,
+      onForceUnmute,
+      onForceVideoOff,
+      onForceRemoved,
+      onSessionEnded,
+    };
   });
 
   // Set initial host state from joinAs IMMEDIATELY (don't wait for socket)
@@ -169,6 +183,10 @@ export function useHostControls({
       callbacksRef.current.onForceRemoved();
     });
 
+    socket.on('session-ended', () => {
+      callbacksRef.current.onSessionEnded();
+    });
+
     // ── FEATURE 3: Recording notifications ──
     socket.on('host-recording-started', () => {
       dispatch({ type: 'SET_IS_RECORDING', recording: true });
@@ -273,6 +291,10 @@ export function useHostControls({
     socketRef.current?.emit('close-doc', roomId);
   }, [roomId]);
 
+  const endSessionForAll = useCallback(() => {
+    socketRef.current?.emit('host-end-session', roomId);
+  }, [roomId]);
+
   return {
     socket: socketRef,
     openWhiteboardForAll,
@@ -289,5 +311,6 @@ export function useHostControls({
     endPoll,
     openSharedDoc,
     closeSharedDoc,
+    endSessionForAll,
   };
 }
