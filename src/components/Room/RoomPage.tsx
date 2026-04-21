@@ -18,8 +18,11 @@ import { WhiteboardPanel } from './WhiteboardPanel';
 import { ParticipantTile } from './ParticipantTile';
 import { PollPanel } from './PollPanel';
 import { DocPanel } from './DocPanel';
+import { WaitingRoom } from './WaitingRoom';
+import { AdmissionPanel } from './AdmissionPanel';
 import { Spinner } from '../shared/Spinner';
 import { Button } from '../shared/Button';
+import { fetchToken } from '../../api/tokenApi';
 
 /** Prevents duplicate auto-record (e.g. React Strict Mode) until the host leaves the room. */
 const autoRecordAttemptedForRoom = new Set<string>();
@@ -38,16 +41,25 @@ export function RoomPage() {
   const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
   const [isPollPanelOpen, setIsPollPanelOpen] = useState(false);
   const [isDocPanelOpen, setIsDocPanelOpen] = useState(false);
+  const [isAdmissionOpen, setIsAdmissionOpen] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(true);
   const connectedAtRef = useRef<Date | null>(null);
   const [connectedAt, setConnectedAt] = useState<Date | null>(null);
 
+  const searchParams = new URLSearchParams(location.search);
   const token = location.state?.token as string | undefined;
-  const displayName = location.state?.displayName as string | undefined;
-  const joinAs = (location.state?.joinAs as 'host' | 'participant') || 'participant';
+  const displayName =
+    (location.state?.displayName as string | undefined) ||
+    searchParams.get('displayName') ||
+    'User';
+  const joinAs =
+    ((location.state?.joinAs as 'host' | 'participant' | undefined) ||
+      (searchParams.get('joinAs') as 'host' | 'participant' | null) ||
+      'participant');
   const userColor = (location.state?.userColor as string) || '#7C3AED';
   const decodedRoom = roomName ? decodeURIComponent(roomName) : '';
+  const [deepLinkToken, setDeepLinkToken] = useState<string | null>(token || null);
 
   // Session recording (actual MediaRecorder)
   const {
@@ -137,6 +149,9 @@ export function RoomPage() {
     openSharedDoc,
     closeSharedDoc,
     endSessionForAll,
+    approveParticipant,
+    rejectParticipant,
+    approveAll,
   } = useHostControls({
     roomId: decodedRoom,
     userName: displayName || 'User',
@@ -149,6 +164,45 @@ export function RoomPage() {
     onSessionEnded: handleSessionEnded,
     dispatch,
   });
+
+  // ── WAITING ROOM: Participant-side approval flow ──
+  // When participant is approved, generate token and connect to LiveKit
+  useEffect(() => {
+    if (state.approvalStatus !== 'approved') return;
+    if (state.room) return; // already connected
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const generatedToken = await fetchToken(decodedRoom, displayName || 'User');
+        if (cancelled) return;
+        await connect(generatedToken);
+        if (!cancelled) {
+          const now = new Date();
+          connectedAtRef.current = now;
+          setConnectedAt(now);
+          setIsConnecting(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setConnectError(err instanceof Error ? err.message : String(err));
+          setIsConnecting(false);
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [state.approvalStatus, state.room, decodedRoom, displayName, connect]);
+
+  // When participant is rejected, navigate back
+  useEffect(() => {
+    if (state.approvalStatus !== 'rejected') return;
+    toast('The host denied your request to join', {
+      icon: '🚫',
+      style: { background: '#1e1e2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+    });
+    navigate('/');
+  }, [state.approvalStatus, navigate]);
 
   // Combined recording state (local recording OR remote host recording notification)
   const isRecording = isLocalRecordingSession || state.isRecording;
@@ -238,16 +292,39 @@ export function RoomPage() {
   }, [state.isHost, state.isWhiteboardOpenByHost]);
 
   useEffect(() => {
-    if (!token) {
-      navigate('/', { replace: true });
-      return;
-    }
+    if (token || deepLinkToken) return;
+    if (joinAs !== 'host' || !decodedRoom || !displayName) return;
+
+    let cancelled = false;
+
+    (async () => {
+      setIsConnecting(true);
+      setConnectError(null);
+      const generatedToken = await fetchToken(decodedRoom, displayName);
+      if (!cancelled) {
+        setDeepLinkToken(generatedToken);
+      }
+    })().catch((err: Error) => {
+      if (!cancelled) {
+        setConnectError(err.message);
+        setIsConnecting(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, deepLinkToken, joinAs, decodedRoom, displayName]);
+
+  useEffect(() => {
+    const effectiveToken = token || deepLinkToken;
+    if (!effectiveToken) return; // participants without token handled separately
 
     let mounted = true;
     setIsConnecting(true);
     setConnectError(null);
 
-    connect(token)
+    connect(effectiveToken)
       .then(() => {
         if (!mounted) return;
         const now = new Date();
@@ -266,7 +343,19 @@ export function RoomPage() {
       disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, deepLinkToken]);
+
+  // Participant without token: skip LiveKit connect, wait for approval
+  useEffect(() => {
+    if (token || deepLinkToken) return; // host path handled above
+    if (joinAs !== 'participant') {
+      navigate('/', { replace: true });
+      return;
+    }
+    // Participant is waiting — socket connection is handled by useHostControls
+    // Don't try to connect to LiveKit yet
+    setIsConnecting(false);
+  }, [token, deepLinkToken, joinAs, navigate]);
 
   // Watch for disconnect state
   useEffect(() => {
@@ -318,6 +407,20 @@ export function RoomPage() {
     );
   }
 
+  // ── Participant waiting for host approval ──
+  if (joinAs === 'participant' && (state.approvalStatus === 'waiting' || state.approvalStatus === 'none') && !state.room) {
+    return (
+      <WaitingRoom
+        roomName={decodedRoom}
+        displayName={displayName || 'User'}
+        onLeave={() => {
+          disconnect();
+          navigate('/');
+        }}
+      />
+    );
+  }
+
   if (connectError && state.connectionState === ConnectionState.Disconnected) {
     return (
       <div className="min-h-screen bg-surface-950 flex items-center justify-center px-4">
@@ -342,6 +445,16 @@ export function RoomPage() {
 
       {/* Main area */}
       <div className="flex-1 flex overflow-hidden relative">
+        {/* Admission panel (host-only) */}
+        <AdmissionPanel
+          open={isAdmissionOpen}
+          onClose={() => setIsAdmissionOpen(false)}
+          waitingParticipants={state.waitingParticipants}
+          onApprove={approveParticipant}
+          onReject={rejectParticipant}
+          onApproveAll={approveAll}
+        />
+
         {/* Participants panel */}
         <ParticipantsPanel
           open={isParticipantsOpen}
@@ -461,6 +574,9 @@ export function RoomPage() {
         onStopRecording={handleStopRecording}
         onPauseRecording={state.isHost ? handlePauseRecording : undefined}
         onResumeRecording={state.isHost ? handleResumeRecording : undefined}
+        waitingCount={state.waitingParticipants.length}
+        onToggleAdmission={() => setIsAdmissionOpen(v => !v)}
+        isAdmissionOpen={isAdmissionOpen}
       />
 
       {/* Settings modal */}

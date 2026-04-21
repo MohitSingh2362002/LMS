@@ -61,6 +61,13 @@ interface Participant {
   joinedAt: number;
 }
 
+interface WaitingParticipant {
+  socketId: string;
+  name: string;
+  color: string;
+  requestedAt: number;
+}
+
 interface RoomState {
   shapes: Shape[];
   history: Shape[][];
@@ -68,6 +75,7 @@ interface RoomState {
   hostSocketId: string | null;
   hostName: string;
   participants: Participant[];
+  waitingList: WaitingParticipant[];
   activePoll: {
     id: string;
     question: string;
@@ -95,6 +103,7 @@ const getRoom = (roomId: string): RoomState => {
       hostSocketId: null,
       hostName: '',
       participants: [],
+      waitingList: [],
       activePoll: null,
       sharedDoc: null,
     });
@@ -149,9 +158,40 @@ io.on('connection', (socket) => {
       room.hostName = userName;
     }
 
-    // Add to participants list
+    // ── WAITING ROOM: participants wait for host approval ──
+    if (joinAs === 'participant' && room.hostSocketId && room.hostSocketId !== socket.id) {
+      const waitingEntry: WaitingParticipant = {
+        socketId: socket.id,
+        name: userName,
+        color,
+        requestedAt: Date.now(),
+      };
+      room.waitingList.push(waitingEntry);
+
+      // Tell the participant they are waiting
+      socket.emit('waiting-for-approval');
+
+      // Notify the host about the new waiting participant
+      io.to(room.hostSocketId).emit('participant-waiting', waitingEntry);
+
+      console.log(`⏳ ${userName} is waiting for approval in room: ${roomId}`);
+      return; // Don't add to participants yet
+    }
+
+    // ── Normal join (host, or no host in room yet) ──
+    _admitParticipant(socket, room, roomId, userName, color);
+  });
+
+  // Helper: admit a participant into the room (shared by join-room and approve)
+  function _admitParticipant(
+    targetSocket: typeof socket,
+    room: RoomState,
+    roomId: string,
+    userName: string,
+    color: string
+  ) {
     room.participants.push({
-      socketId: socket.id,
+      socketId: targetSocket.id,
       name: userName,
       color,
       isMuted: false,
@@ -160,12 +200,12 @@ io.on('connection', (socket) => {
     });
 
     // Send current state to new joiner
-    socket.emit('init-state', {
+    targetSocket.emit('init-state', {
       shapes: room.shapes,
       hostSocketId: room.hostSocketId,
       hostName: room.hostName,
       participants: room.participants,
-      isHost: room.hostSocketId === socket.id,
+      isHost: room.hostSocketId === targetSocket.id,
       activePoll: room.activePoll
         ? {
             id: room.activePoll.id,
@@ -175,13 +215,13 @@ io.on('connection', (socket) => {
             createdBy: room.activePoll.createdBy,
           }
         : null,
-      myPollVoteOptionId: room.activePoll?.votesBySocket[socket.id] || null,
+      myPollVoteOptionId: room.activePoll?.votesBySocket[targetSocket.id] || null,
       sharedDoc: room.sharedDoc,
     });
 
     // Notify everyone else
-    socket.to(roomId).emit('participant-joined', {
-      socketId: socket.id,
+    targetSocket.to(roomId).emit('participant-joined', {
+      socketId: targetSocket.id,
       name: userName,
       color,
       isMuted: false,
@@ -190,15 +230,73 @@ io.on('connection', (socket) => {
     });
 
     // Tell new joiner who the host is
-    socket.emit('host-assigned', {
+    targetSocket.emit('host-assigned', {
       hostSocketId: room.hostSocketId,
       hostName: room.hostName,
     });
 
     // Send existing shapes to new joiner
-    socket.emit('init-shapes', room.shapes);
+    targetSocket.emit('init-shapes', room.shapes);
 
-    console.log(`👤 ${userName} joined room: ${roomId} (host: ${room.hostSocketId === socket.id})`);
+    console.log(`👤 ${userName} joined room: ${roomId} (host: ${room.hostSocketId === targetSocket.id})`);
+  }
+
+  // ── WAITING ROOM: Host approves a participant ──
+  socket.on('approve-participant', (roomId: string, targetSocketId: string) => {
+    const room = getRoom(roomId);
+    if (room.hostSocketId !== socket.id) return; // only host
+
+    const idx = room.waitingList.findIndex(w => w.socketId === targetSocketId);
+    if (idx === -1) return;
+
+    const waiting = room.waitingList.splice(idx, 1)[0];
+
+    // Tell the participant they are approved
+    io.to(targetSocketId).emit('join-approved');
+
+    // Admit them into the room
+    const targetSocket = io.sockets.sockets.get(targetSocketId);
+    if (targetSocket) {
+      _admitParticipant(targetSocket, room, roomId, waiting.name, waiting.color);
+    }
+
+    console.log(`✅ Host approved ${waiting.name} in room: ${roomId}`);
+  });
+
+  // ── WAITING ROOM: Host rejects a participant ──
+  socket.on('reject-participant', (roomId: string, targetSocketId: string) => {
+    const room = getRoom(roomId);
+    if (room.hostSocketId !== socket.id) return; // only host
+
+    const idx = room.waitingList.findIndex(w => w.socketId === targetSocketId);
+    if (idx === -1) return;
+
+    const waiting = room.waitingList.splice(idx, 1)[0];
+
+    // Tell the participant they are rejected
+    io.to(targetSocketId).emit('join-rejected');
+
+    console.log(`❌ Host rejected ${waiting.name} in room: ${roomId}`);
+  });
+
+  // ── WAITING ROOM: Host approves all waiting participants ──
+  socket.on('approve-all', (roomId: string) => {
+    const room = getRoom(roomId);
+    if (room.hostSocketId !== socket.id) return; // only host
+
+    const waitingCopy = [...room.waitingList];
+    room.waitingList = [];
+
+    for (const waiting of waitingCopy) {
+      io.to(waiting.socketId).emit('join-approved');
+
+      const targetSocket = io.sockets.sockets.get(waiting.socketId);
+      if (targetSocket) {
+        _admitParticipant(targetSocket, room, roomId, waiting.name, waiting.color);
+      }
+    }
+
+    console.log(`✅ Host approved all (${waitingCopy.length}) waiting participants in room: ${roomId}`);
   });
 
   // ── WHITEBOARD SHAPE EVENTS (existing) ─────────────────
@@ -511,6 +609,18 @@ io.on('connection', (socket) => {
     const room = rooms.get(currentRoom);
     if (!room) return;
 
+    // ── Clean up from waiting list if they were waiting ──
+    const waitingIdx = room.waitingList.findIndex(w => w.socketId === socket.id);
+    if (waitingIdx !== -1) {
+      room.waitingList.splice(waitingIdx, 1);
+      // Notify host that a waiting participant left
+      if (room.hostSocketId) {
+        io.to(room.hostSocketId).emit('participant-left-waiting', socket.id);
+      }
+      console.log(`⏳ Waiting participant ${currentName} disconnected from room: ${currentRoom}`);
+      return; // They were never admitted, so no further cleanup needed
+    }
+
     if (room.activePoll) {
       const votedOptionId = room.activePoll.votesBySocket[socket.id];
       if (votedOptionId) {
@@ -534,6 +644,12 @@ io.on('connection', (socket) => {
 
     // If host left, assign to next participant
     if (room.hostSocketId === socket.id) {
+      // Reject all waiting participants since there's no host anymore
+      for (const w of room.waitingList) {
+        io.to(w.socketId).emit('join-rejected');
+      }
+      room.waitingList = [];
+
       const next = room.participants[0];
       if (next) {
         room.hostSocketId = next.socketId;

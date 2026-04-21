@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Radio, User, Hash, ArrowRight, Clock, Crown, Users } from 'lucide-react';
 import { Button } from '../shared/Button';
 import { useTokenFetch } from '../../hooks/useTokenFetch';
@@ -35,18 +35,64 @@ function getColorFromName(name: string): string {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
-export function JoinPage() {
+interface JoinPageProps {
+  roomName?: string;
+}
+
+export function JoinPage({ roomName: roomNameProp }: JoinPageProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { loading, error, getToken } = useTokenFetch();
-  const [displayName, setDisplayName] = useState('');
-  const [roomName, setRoomName] = useState('');
-  const [joinAs, setJoinAs] = useState<'host' | 'participant'>('host');
   const [fieldErrors, setFieldErrors] = useState<{ name?: string; room?: string }>({});
   const [recentRooms, setRecentRooms] = useState<string[]>([]);
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const queryRoomName = useMemo(() => searchParams.get('roomName')?.trim() || '', [searchParams]);
+  const queryDisplayName = useMemo(
+    () => searchParams.get('displayName')?.trim() || '',
+    [searchParams]
+  );
+  const queryJoinAs = useMemo(() => {
+    const value = searchParams.get('joinAs');
+    return value === 'participant' ? 'participant' : value === 'host' ? 'host' : '';
+  }, [searchParams]);
+  const lockedRoomName = useMemo(
+    () => (roomNameProp?.trim() || queryRoomName || '').trim(),
+    [roomNameProp, queryRoomName]
+  );
+  const lockedJoinAs = useMemo(
+    () => (queryJoinAs === 'host' || queryJoinAs === 'participant' ? queryJoinAs : ''),
+    [queryJoinAs]
+  );
+  const lockedDisplayName = useMemo(() => queryDisplayName.trim(), [queryDisplayName]);
+  const [displayName, setDisplayName] = useState(lockedDisplayName);
+  const [joinAs, setJoinAs] = useState<'host' | 'participant'>(
+    lockedJoinAs === 'participant' ? 'participant' : 'host'
+  );
+  const [roomName, setRoomName] = useState(lockedRoomName);
 
   useEffect(() => {
     setRecentRooms(getRecentRooms());
   }, []);
+
+  useEffect(() => {
+    if (lockedRoomName) {
+      setRoomName(lockedRoomName);
+      setFieldErrors((prev) => ({ ...prev, room: undefined }));
+    }
+  }, [lockedRoomName]);
+
+  useEffect(() => {
+    if (lockedDisplayName) {
+      setDisplayName(lockedDisplayName);
+      setFieldErrors((prev) => ({ ...prev, name: undefined }));
+    }
+  }, [lockedDisplayName]);
+
+  useEffect(() => {
+    if (lockedJoinAs === 'host' || lockedJoinAs === 'participant') {
+      setJoinAs(lockedJoinAs);
+    }
+  }, [lockedJoinAs]);
 
   const validate = (): boolean => {
     const errs: { name?: string; room?: string } = {};
@@ -82,18 +128,32 @@ export function JoinPage() {
       }
     }
 
-    const token = await getToken(room, username);
-    if (!token) return;
-    saveRecentRoom(room);
-    navigate(`/room/${encodeURIComponent(room)}`, {
-      state: {
-        token,
-        displayName: username,
-        roomName: room,
-        joinAs,
-        userColor: getColorFromName(username),
-      },
-    });
+    if (joinAs === 'host') {
+      // Host generates token immediately
+      const token = await getToken(room, username);
+      if (!token) return;
+      saveRecentRoom(room);
+      navigate(`/room/${encodeURIComponent(room)}`, {
+        state: {
+          token,
+          displayName: username,
+          roomName: room,
+          joinAs,
+          userColor: getColorFromName(username),
+        },
+      });
+    } else {
+      // Participant: navigate WITHOUT token — will wait for host approval
+      saveRecentRoom(room);
+      navigate(`/room/${encodeURIComponent(room)}`, {
+        state: {
+          displayName: username,
+          roomName: room,
+          joinAs,
+          userColor: getColorFromName(username),
+        },
+      });
+    }
   };
 
   return (
@@ -126,29 +186,34 @@ export function JoinPage() {
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={() => setJoinAs('host')}
+                  onClick={() => !lockedJoinAs && setJoinAs('host')}
+                  disabled={Boolean(lockedJoinAs)}
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-medium transition-all duration-200 ${
                     joinAs === 'host'
                       ? 'bg-brand-600 border-brand-500 text-white shadow-lg shadow-brand-600/20'
                       : 'bg-surface-800 border-white/10 text-white/50 hover:text-white hover:bg-surface-700'
-                  }`}
+                  } ${lockedJoinAs ? 'cursor-not-allowed opacity-80' : ''}`}
                 >
                   <Crown size={15} />
                   Join as Host
                 </button>
                 <button
                   type="button"
-                  onClick={() => setJoinAs('participant')}
+                  onClick={() => !lockedJoinAs && setJoinAs('participant')}
+                  disabled={Boolean(lockedJoinAs)}
                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-sm font-medium transition-all duration-200 ${
                     joinAs === 'participant'
                       ? 'bg-brand-600 border-brand-500 text-white shadow-lg shadow-brand-600/20'
                       : 'bg-surface-800 border-white/10 text-white/50 hover:text-white hover:bg-surface-700'
-                  }`}
+                  } ${lockedJoinAs ? 'cursor-not-allowed opacity-80' : ''}`}
                 >
                   <Users size={15} />
                   Join as Participant
                 </button>
               </div>
+              {lockedJoinAs && (
+                <p className="text-white/30 text-xs mt-1.5">Join role is preset and cannot be changed.</p>
+              )}
               <p className="text-white/30 text-xs mt-1.5">
                 {joinAs === 'host'
                   ? 'You\'ll have control over whiteboard, mute, and recording.'
@@ -166,9 +231,13 @@ export function JoinPage() {
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   placeholder="Alice"
-                  className="w-full bg-surface-800 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-white placeholder-white/25 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/60 focus:border-brand-500/60 transition-all"
+                  disabled={Boolean(lockedDisplayName)}
+                  className="w-full bg-surface-800 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-white placeholder-white/25 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/60 focus:border-brand-500/60 transition-all disabled:cursor-not-allowed disabled:opacity-70"
                 />
               </div>
+              {lockedDisplayName && (
+                <p className="text-white/30 text-xs mt-1.5">Display name is preset and cannot be changed.</p>
+              )}
               {fieldErrors.name && (
                 <p className="text-rose-400 text-xs mt-1.5">{fieldErrors.name}</p>
               )}
@@ -184,9 +253,13 @@ export function JoinPage() {
                   value={roomName}
                   onChange={(e) => setRoomName(e.target.value)}
                   placeholder="room-001"
-                  className="w-full bg-surface-800 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-white placeholder-white/25 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/60 focus:border-brand-500/60 transition-all"
+                  disabled={Boolean(lockedRoomName)}
+                  className="w-full bg-surface-800 border border-white/10 rounded-xl pl-9 pr-4 py-2.5 text-white placeholder-white/25 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/60 focus:border-brand-500/60 transition-all disabled:cursor-not-allowed disabled:opacity-70"
                 />
               </div>
+              {lockedRoomName && (
+                <p className="text-white/30 text-xs mt-1.5">Room name is preset and cannot be changed.</p>
+              )}
               {fieldErrors.room && (
                 <p className="text-rose-400 text-xs mt-1.5">{fieldErrors.room}</p>
               )}
@@ -211,7 +284,7 @@ export function JoinPage() {
         </div>
 
         {/* Recent Rooms */}
-        {recentRooms.length > 0 && (
+        {!lockedRoomName && recentRooms.length > 0 && (
           <div className="mt-6">
             <div className="flex items-center gap-2 text-white/40 text-xs font-medium mb-3 px-1">
               <Clock size={12} />

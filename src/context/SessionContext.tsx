@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
 import { ConnectionQuality, ConnectionState, LocalParticipant, RemoteParticipant, Room } from 'livekit-client';
-import { ChatMessage, ParticipantInfo, PollState, SessionState, SharedDocState } from '../types';
+import { ChatMessage, ParticipantInfo, PollState, SessionState, SharedDocState, WaitingParticipant } from '../types';
 
 type SessionAction =
   | { type: 'SET_ROOM'; room: Room; localParticipant: LocalParticipant }
@@ -25,7 +25,12 @@ type SessionAction =
   | { type: 'SET_RECORDING_PAUSED'; paused: boolean }
   | { type: 'SET_ACTIVE_POLL'; poll: PollState | null }
   | { type: 'SET_MY_POLL_VOTE'; optionId: string | null }
-  | { type: 'SET_SHARED_DOC'; doc: SharedDocState | null };
+  | { type: 'SET_SHARED_DOC'; doc: SharedDocState | null }
+  // Waiting room actions
+  | { type: 'SET_WAITING_PARTICIPANTS'; participants: WaitingParticipant[] }
+  | { type: 'ADD_WAITING_PARTICIPANT'; participant: WaitingParticipant }
+  | { type: 'REMOVE_WAITING_PARTICIPANT'; socketId: string }
+  | { type: 'SET_APPROVAL_STATUS'; status: 'none' | 'waiting' | 'approved' | 'rejected' };
 
 const initialState: SessionState = {
   room: null,
@@ -50,6 +55,9 @@ const initialState: SessionState = {
   activePoll: null,
   myPollVoteOptionId: null,
   sharedDoc: null,
+  // Waiting room defaults
+  waitingParticipants: [],
+  approvalStatus: 'none',
 };
 
 function sessionReducer(state: SessionState, action: SessionAction): SessionState {
@@ -103,6 +111,15 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
       return { ...state, myPollVoteOptionId: action.optionId };
     case 'SET_SHARED_DOC':
       return { ...state, sharedDoc: action.doc };
+    // Waiting room reducers
+    case 'SET_WAITING_PARTICIPANTS':
+      return { ...state, waitingParticipants: action.participants };
+    case 'ADD_WAITING_PARTICIPANT':
+      return { ...state, waitingParticipants: [...state.waitingParticipants, action.participant] };
+    case 'REMOVE_WAITING_PARTICIPANT':
+      return { ...state, waitingParticipants: state.waitingParticipants.filter(w => w.socketId !== action.socketId) };
+    case 'SET_APPROVAL_STATUS':
+      return { ...state, approvalStatus: action.status };
     default:
       return state;
   }
