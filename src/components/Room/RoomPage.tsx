@@ -21,6 +21,9 @@ import { DocPanel } from './DocPanel';
 import { Spinner } from '../shared/Spinner';
 import { Button } from '../shared/Button';
 
+/** Prevents duplicate auto-record (e.g. React Strict Mode) until the host leaves the room. */
+const autoRecordAttemptedForRoom = new Set<string>();
+
 export function RoomPage() {
   const { roomName } = useParams<{ roomName: string }>();
   const location = useLocation();
@@ -48,9 +51,12 @@ export function RoomPage() {
 
   // Session recording (actual MediaRecorder)
   const {
-    isRecording: isLocalRecording,
+    isRecording: isLocalRecordingSession,
+    isPaused: isLocalRecordingPaused,
     startRecording: startLocalRecording,
     stopRecording: stopLocalRecording,
+    pauseRecording: pauseLocalRecording,
+    resumeRecording: resumeLocalRecording,
   } = useSessionRecording();
 
   // Force mute handler — ONLY called when host explicitly mutes via socket
@@ -100,16 +106,17 @@ export function RoomPage() {
   }, [disconnect, navigate]);
 
   const handleSessionEnded = useCallback(() => {
-    if (isLocalRecording) {
-      stopLocalRecording();
+    if (isLocalRecordingSession) {
+      void stopLocalRecording();
     }
+    if (decodedRoom) autoRecordAttemptedForRoom.delete(decodedRoom);
     disconnect();
     toast('This session has ended.', {
       icon: '☎️',
       style: { background: '#1e1e2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
     });
     navigate('/');
-  }, [disconnect, navigate, isLocalRecording, stopLocalRecording]);
+  }, [disconnect, navigate, isLocalRecordingSession, stopLocalRecording, decodedRoom]);
 
   // Host controls hook
   const {
@@ -122,6 +129,8 @@ export function RoomPage() {
     removeParticipant,
     notifyRecordingStarted,
     notifyRecordingStopped,
+    notifyRecordingPaused,
+    notifyRecordingResumed,
     startPoll,
     answerPoll,
     endPoll,
@@ -142,9 +151,41 @@ export function RoomPage() {
   });
 
   // Combined recording state (local recording OR remote host recording notification)
-  const isRecording = isLocalRecording || state.isRecording;
+  const isRecording = isLocalRecordingSession || state.isRecording;
+  const recordingPausedForBar = state.isHost ? isLocalRecordingPaused : state.recordingPaused;
 
-  // Handle start recording (host only)
+  // Host: auto-start screen capture + announcement when joining as host
+  useEffect(() => {
+    if (isConnecting || connectError || !decodedRoom) return;
+    if (!state.isHost || joinAs !== 'host') return;
+    if (autoRecordAttemptedForRoom.has(decodedRoom)) return;
+    autoRecordAttemptedForRoom.add(decodedRoom);
+
+    void (async () => {
+      const success = await startLocalRecording({ playAnnouncement: true });
+      if (success) {
+        notifyRecordingStarted();
+        toast.success('Recording started. This meeting is recorded.', {
+          style: { background: '#1e1e2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+        });
+      } else {
+        toast('Recording did not start. Use Record when you are ready.', {
+          icon: '⏺️',
+          style: { background: '#1e1e2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+        });
+      }
+    })();
+  }, [
+    isConnecting,
+    connectError,
+    state.isHost,
+    joinAs,
+    decodedRoom,
+    startLocalRecording,
+    notifyRecordingStarted,
+  ]);
+
+  // Handle start recording (host only) — no repeated announcement
   const handleStartRecording = useCallback(async () => {
     const success = await startLocalRecording();
     if (success) {
@@ -158,6 +199,23 @@ export function RoomPage() {
       });
     }
   }, [startLocalRecording, notifyRecordingStarted]);
+
+  const handlePauseRecording = useCallback(() => {
+    if (!pauseLocalRecording()) return;
+    notifyRecordingPaused();
+    toast('Recording paused', {
+      icon: '⏸️',
+      style: { background: '#1e1e2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+    });
+  }, [pauseLocalRecording, notifyRecordingPaused]);
+
+  const handleResumeRecording = useCallback(() => {
+    if (!resumeLocalRecording()) return;
+    notifyRecordingResumed();
+    toast.success('Recording resumed', {
+      style: { background: '#1e1e2e', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+    });
+  }, [resumeLocalRecording, notifyRecordingResumed]);
 
   // Handle stop recording (host only)
   const handleStopRecording = useCallback(async () => {
@@ -218,9 +276,9 @@ export function RoomPage() {
   }, [state.connectionState, connectedAt]);
 
   const handleLeave = () => {
-    // Stop recording if active
-    if (isLocalRecording) {
-      stopLocalRecording();
+    if (decodedRoom) autoRecordAttemptedForRoom.delete(decodedRoom);
+    if (isLocalRecordingSession) {
+      void stopLocalRecording();
     }
     disconnect();
     navigate('/');
@@ -396,10 +454,13 @@ export function RoomPage() {
         isWhiteboardOpen={isWhiteboardOpen}
         isHost={state.isHost}
         isRecording={isRecording}
+        recordingPaused={recordingPausedForBar}
         isPollPanelOpen={isPollPanelOpen}
         isDocPanelOpen={isDocPanelOpen}
         onStartRecording={handleStartRecording}
         onStopRecording={handleStopRecording}
+        onPauseRecording={state.isHost ? handlePauseRecording : undefined}
+        onResumeRecording={state.isHost ? handleResumeRecording : undefined}
       />
 
       {/* Settings modal */}

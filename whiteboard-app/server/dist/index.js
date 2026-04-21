@@ -285,6 +285,20 @@ io.on('connection', (socket) => {
         socket.to(roomId).emit('host-recording-stopped', meta);
         console.log(`⏹ Host stopped recording in room: ${roomId}`);
     });
+    socket.on('recording-paused', (roomId) => {
+        const room = getRoom(roomId);
+        if (room.hostSocketId !== socket.id)
+            return;
+        socket.to(roomId).emit('host-recording-paused');
+        console.log(`⏸ Host paused recording in room: ${roomId}`);
+    });
+    socket.on('recording-resumed', (roomId) => {
+        const room = getRoom(roomId);
+        if (room.hostSocketId !== socket.id)
+            return;
+        socket.to(roomId).emit('host-recording-resumed');
+        console.log(`▶ Host resumed recording in room: ${roomId}`);
+    });
     // ── FEATURE 4: POLL / Q&A ───────────────────────────────
     socket.on('start-poll', (roomId, question, options) => {
         const room = getRoom(roomId);

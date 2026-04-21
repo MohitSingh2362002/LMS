@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Mic, MicOff, Video, VideoOff, MonitorUp, MonitorOff,
   MessageSquare, Users, Settings, PhoneOff, PenTool, Circle, StopCircle, BarChart3, FileText,
-  LogOut, OctagonAlert,
+  LogOut, OctagonAlert, Pause, Play,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useSession } from '../../context/SessionContext';
@@ -22,10 +22,14 @@ interface ControlBarProps {
   isWhiteboardOpen: boolean;
   isHost: boolean;
   isRecording: boolean;
+  /** Host: capture is paused (participants may use global state instead). */
+  recordingPaused?: boolean;
   isPollPanelOpen: boolean;
   isDocPanelOpen: boolean;
   onStartRecording: () => void;
   onStopRecording: () => void;
+  onPauseRecording?: () => void;
+  onResumeRecording?: () => void;
 }
 
 interface ControlButtonProps {
@@ -87,10 +91,13 @@ export function ControlBar({
   isWhiteboardOpen,
   isHost,
   isRecording,
+  recordingPaused = false,
   isPollPanelOpen,
   isDocPanelOpen,
   onStartRecording,
   onStopRecording,
+  onPauseRecording,
+  onResumeRecording,
 }: ControlBarProps) {
   const { state, toggleMic, toggleCamera, toggleScreenShare } = useSession();
   const { isMicEnabled, isCameraEnabled, isScreenSharing, unreadCount } = state;
@@ -169,25 +176,65 @@ export function ControlBar({
           />
         )}
 
-        {/* Host-only record button */}
-        {isHost && (
+        {/* Host-only recording controls */}
+        {isHost && !isRecording && (
           <ControlButton
-            icon={isRecording ? <StopCircle size={20} /> : <Circle size={20} />}
-            label={isRecording ? 'Stop Rec' : 'Record'}
-            onClick={isRecording ? onStopRecording : onStartRecording}
-            active={isRecording}
+            icon={<Circle size={20} />}
+            label="Record"
+            onClick={onStartRecording}
             activeColor="#ef4444"
           />
         )}
+        {isHost && isRecording && !recordingPaused && (
+          <>
+            <ControlButton
+              icon={<Pause size={20} />}
+              label="Pause"
+              onClick={() => onPauseRecording?.()}
+              disabled={!onPauseRecording}
+            />
+            <ControlButton
+              icon={<StopCircle size={20} />}
+              label="Stop Rec"
+              onClick={onStopRecording}
+              active
+              activeColor="#ef4444"
+            />
+          </>
+        )}
+        {isHost && isRecording && recordingPaused && (
+          <>
+            <ControlButton
+              icon={<Play size={20} />}
+              label="Resume"
+              onClick={() => onResumeRecording?.()}
+              disabled={!onResumeRecording}
+              activeColor="#22c55e"
+            />
+            <ControlButton
+              icon={<StopCircle size={20} />}
+              label="Stop Rec"
+              onClick={onStopRecording}
+              active
+              activeColor="#ef4444"
+            />
+          </>
+        )}
 
-        {/* Participants see REC indicator when host is recording */}
+        {/* Participants see REC when host is recording (running or paused) */}
         {!isHost && isRecording && (
           <div className="flex items-center gap-1.5 px-3 py-2 bg-rose-500/10 border border-rose-500/20 rounded-xl">
             <div
               className="w-2 h-2 rounded-full bg-rose-500"
-              style={{ animation: 'pulse 1.5s ease-in-out infinite' }}
+              style={
+                !recordingPaused
+                  ? { animation: 'pulse 1.5s ease-in-out infinite' }
+                  : undefined
+              }
             />
-            <span className="text-rose-400 text-xs font-medium">REC</span>
+            <span className="text-rose-400 text-xs font-medium">
+              {recordingPaused ? 'REC (paused)' : 'REC'}
+            </span>
           </div>
         )}
 

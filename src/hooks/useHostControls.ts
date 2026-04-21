@@ -194,6 +194,12 @@ export function useHostControls({
     socket.on('host-recording-stopped', () => {
       dispatch({ type: 'SET_IS_RECORDING', recording: false });
     });
+    socket.on('host-recording-paused', () => {
+      dispatch({ type: 'SET_RECORDING_PAUSED', paused: true });
+    });
+    socket.on('host-recording-resumed', () => {
+      dispatch({ type: 'SET_RECORDING_PAUSED', paused: false });
+    });
 
     socket.on('poll-started', (poll: PollState) => {
       dispatch({ type: 'SET_ACTIVE_POLL', poll });
@@ -271,6 +277,16 @@ export function useHostControls({
     dispatch({ type: 'SET_IS_RECORDING', recording: false });
   }, [roomId, dispatch]);
 
+  const notifyRecordingPaused = useCallback(() => {
+    socketRef.current?.emit('recording-paused', roomId);
+    dispatch({ type: 'SET_RECORDING_PAUSED', paused: true });
+  }, [roomId, dispatch]);
+
+  const notifyRecordingResumed = useCallback(() => {
+    socketRef.current?.emit('recording-resumed', roomId);
+    dispatch({ type: 'SET_RECORDING_PAUSED', paused: false });
+  }, [roomId, dispatch]);
+
   const startPoll = useCallback((question: string, options: string[]) => {
     socketRef.current?.emit('start-poll', roomId, question, options);
   }, [roomId]);
@@ -306,6 +322,8 @@ export function useHostControls({
     removeParticipant,
     notifyRecordingStarted,
     notifyRecordingStopped,
+    notifyRecordingPaused,
+    notifyRecordingResumed,
     startPoll,
     answerPoll,
     endPoll,

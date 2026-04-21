@@ -22,6 +22,7 @@ type SessionAction =
   | { type: 'UPDATE_HOST_PARTICIPANTS'; updater: (prev: ParticipantInfo[]) => ParticipantInfo[] }
   | { type: 'SET_WHITEBOARD_OPEN_BY_HOST'; open: boolean }
   | { type: 'SET_IS_RECORDING'; recording: boolean }
+  | { type: 'SET_RECORDING_PAUSED'; paused: boolean }
   | { type: 'SET_ACTIVE_POLL'; poll: PollState | null }
   | { type: 'SET_MY_POLL_VOTE'; optionId: string | null }
   | { type: 'SET_SHARED_DOC'; doc: SharedDocState | null };
@@ -45,6 +46,7 @@ const initialState: SessionState = {
   hostParticipants: [],
   isWhiteboardOpenByHost: false,
   isRecording: false,
+  recordingPaused: false,
   activePoll: null,
   myPollVoteOptionId: null,
   sharedDoc: null,
@@ -88,7 +90,13 @@ function sessionReducer(state: SessionState, action: SessionAction): SessionStat
     case 'SET_WHITEBOARD_OPEN_BY_HOST':
       return { ...state, isWhiteboardOpenByHost: action.open };
     case 'SET_IS_RECORDING':
-      return { ...state, isRecording: action.recording };
+      return {
+        ...state,
+        isRecording: action.recording,
+        recordingPaused: false,
+      };
+    case 'SET_RECORDING_PAUSED':
+      return { ...state, recordingPaused: action.paused };
     case 'SET_ACTIVE_POLL':
       return { ...state, activePoll: action.poll };
     case 'SET_MY_POLL_VOTE':

@@ -56,6 +56,8 @@ export interface SessionState {
   hostParticipants: ParticipantInfo[];
   isWhiteboardOpenByHost: boolean;
   isRecording: boolean;
+  /** True when host paused capture (participants still see session as recording). */
+  recordingPaused: boolean;
   activePoll: PollState | null;
   myPollVoteOptionId: string | null;
   sharedDoc: SharedDocState | null;
