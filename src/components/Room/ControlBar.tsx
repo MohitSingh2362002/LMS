@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Mic, MicOff, Video, VideoOff, MonitorUp, MonitorOff,
   MessageSquare, Users, Settings, PhoneOff, PenTool, Circle, StopCircle, BarChart3, FileText,
-  LogOut, OctagonAlert, Pause, Play,
+  LogOut, OctagonAlert, Pause, Play, UserPlus,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useSession } from '../../context/SessionContext';
@@ -30,6 +30,10 @@ interface ControlBarProps {
   onStopRecording: () => void;
   onPauseRecording?: () => void;
   onResumeRecording?: () => void;
+  /** Waiting room */
+  waitingCount?: number;
+  onToggleAdmission?: () => void;
+  isAdmissionOpen?: boolean;
 }
 
 interface ControlButtonProps {
@@ -98,6 +102,9 @@ export function ControlBar({
   onStopRecording,
   onPauseRecording,
   onResumeRecording,
+  waitingCount = 0,
+  onToggleAdmission,
+  isAdmissionOpen = false,
 }: ControlBarProps) {
   const { state, toggleMic, toggleCamera, toggleScreenShare } = useSession();
   const { isMicEnabled, isCameraEnabled, isScreenSharing, unreadCount } = state;
@@ -253,6 +260,16 @@ export function ControlBar({
           onClick={onToggleParticipants}
           active={isParticipantsOpen}
         />
+        {isHost && onToggleAdmission && (
+          <ControlButton
+            icon={<UserPlus size={20} />}
+            label="Admission"
+            onClick={onToggleAdmission}
+            active={isAdmissionOpen}
+            badge={waitingCount}
+            activeColor={waitingCount > 0 ? '#f59e0b' : undefined}
+          />
+        )}
         <ControlButton
           icon={<Settings size={20} />}
           label="Settings"

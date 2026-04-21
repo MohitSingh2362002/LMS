@@ -82,18 +82,32 @@ export function JoinPage() {
       }
     }
 
-    const token = await getToken(room, username);
-    if (!token) return;
-    saveRecentRoom(room);
-    navigate(`/room/${encodeURIComponent(room)}`, {
-      state: {
-        token,
-        displayName: username,
-        roomName: room,
-        joinAs,
-        userColor: getColorFromName(username),
-      },
-    });
+    if (joinAs === 'host') {
+      // Host generates token immediately
+      const token = await getToken(room, username);
+      if (!token) return;
+      saveRecentRoom(room);
+      navigate(`/room/${encodeURIComponent(room)}`, {
+        state: {
+          token,
+          displayName: username,
+          roomName: room,
+          joinAs,
+          userColor: getColorFromName(username),
+        },
+      });
+    } else {
+      // Participant: navigate WITHOUT token — will wait for host approval
+      saveRecentRoom(room);
+      navigate(`/room/${encodeURIComponent(room)}`, {
+        state: {
+          displayName: username,
+          roomName: room,
+          joinAs,
+          userColor: getColorFromName(username),
+        },
+      });
+    }
   };
 
   return (

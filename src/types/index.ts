@@ -17,6 +17,13 @@ export interface ParticipantInfo {
   joinedAt: number;
 }
 
+export interface WaitingParticipant {
+  socketId: string;
+  name: string;
+  color: string;
+  requestedAt: number;
+}
+
 export interface PollOption {
   id: string;
   text: string;
@@ -61,6 +68,10 @@ export interface SessionState {
   activePoll: PollState | null;
   myPollVoteOptionId: string | null;
   sharedDoc: SharedDocState | null;
+  // Waiting room fields
+  waitingParticipants: WaitingParticipant[];
+  /** Participant-side: tracks approval status */
+  approvalStatus: 'none' | 'waiting' | 'approved' | 'rejected';
 }
 
 export interface TokenResponse {

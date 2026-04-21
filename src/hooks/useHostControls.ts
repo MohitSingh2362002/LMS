@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { ParticipantInfo, PollState, SharedDocState } from '../types';
+import { ParticipantInfo, PollState, SharedDocState, WaitingParticipant } from '../types';
 
 const SOCKET_URL = import.meta.env.VITE_WHITEBOARD_SOCKET_URL || 'http://localhost:3001';
 
@@ -227,6 +227,33 @@ export function useHostControls({
       dispatch({ type: 'SET_SHARED_DOC', doc: null });
     });
 
+    // ── WAITING ROOM: Host receives waiting participants ──
+    socket.on('participant-waiting', (p: WaitingParticipant) => {
+      console.log('[HostControls] Participant waiting for approval:', p.name);
+      dispatch({ type: 'ADD_WAITING_PARTICIPANT', participant: p });
+    });
+
+    socket.on('participant-left-waiting', (socketId: string) => {
+      console.log('[HostControls] Waiting participant left:', socketId);
+      dispatch({ type: 'REMOVE_WAITING_PARTICIPANT', socketId });
+    });
+
+    // ── WAITING ROOM: Participant-side approval status ──
+    socket.on('waiting-for-approval', () => {
+      console.log('[HostControls] Waiting for host approval...');
+      dispatch({ type: 'SET_APPROVAL_STATUS', status: 'waiting' });
+    });
+
+    socket.on('join-approved', () => {
+      console.log('[HostControls] Host approved your join request!');
+      dispatch({ type: 'SET_APPROVAL_STATUS', status: 'approved' });
+    });
+
+    socket.on('join-rejected', () => {
+      console.log('[HostControls] Host rejected your join request.');
+      dispatch({ type: 'SET_APPROVAL_STATUS', status: 'rejected' });
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;
@@ -311,6 +338,22 @@ export function useHostControls({
     socketRef.current?.emit('host-end-session', roomId);
   }, [roomId]);
 
+  // ── WAITING ROOM: Host actions ──
+  const approveParticipant = useCallback((targetSocketId: string) => {
+    socketRef.current?.emit('approve-participant', roomId, targetSocketId);
+    dispatch({ type: 'REMOVE_WAITING_PARTICIPANT', socketId: targetSocketId });
+  }, [roomId, dispatch]);
+
+  const rejectParticipant = useCallback((targetSocketId: string) => {
+    socketRef.current?.emit('reject-participant', roomId, targetSocketId);
+    dispatch({ type: 'REMOVE_WAITING_PARTICIPANT', socketId: targetSocketId });
+  }, [roomId, dispatch]);
+
+  const approveAll = useCallback(() => {
+    socketRef.current?.emit('approve-all', roomId);
+    dispatch({ type: 'SET_WAITING_PARTICIPANTS', participants: [] });
+  }, [roomId, dispatch]);
+
   return {
     socket: socketRef,
     openWhiteboardForAll,
@@ -330,5 +373,8 @@ export function useHostControls({
     openSharedDoc,
     closeSharedDoc,
     endSessionForAll,
+    approveParticipant,
+    rejectParticipant,
+    approveAll,
   };
 }
